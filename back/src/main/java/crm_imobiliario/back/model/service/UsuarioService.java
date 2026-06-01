@@ -117,12 +117,12 @@ public class UsuarioService {
         }
     }
 
-    public String normalizarCpf(String valor) {
-        if (valor == null || valor.isBlank()) {
-            return null;
-        }
-        return valor.replaceAll("\\D", "");
-    }
+    // public String normalizarCpf(String valor) {
+    //     if (valor == null || valor.isBlank()) {
+    //         return null;
+    //     }
+    //     return valor.replaceAll("\\D", "");
+    // }
 
     public Usuario atualizarUsuario(Long id, UsuarioDTO dto) {
         Usuario usuario = usuarioRepository.findById(id)

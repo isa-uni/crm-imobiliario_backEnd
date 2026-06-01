@@ -41,6 +41,7 @@ public class FilterChain {
                     authorization.requestMatchers(HttpMethod.POST,"/imovel/cadastrar").permitAll();
                     authorization.requestMatchers(HttpMethod.GET,"/leads").permitAll();
                     authorization.requestMatchers(HttpMethod.GET,"/imovel").permitAll();
+                    authorization.requestMatchers(HttpMethod.GET,"/imovel/disponivel").permitAll();
                     authorization.requestMatchers(HttpMethod.GET,"/leads/metrics").permitAll();
                     // authorization.requestMatchers(HttpMethod.POST,"/usuarios/cadastrar").hasRole("admin");
                     authorization.requestMatchers(HttpMethod.POST,"/papel/novo").permitAll();

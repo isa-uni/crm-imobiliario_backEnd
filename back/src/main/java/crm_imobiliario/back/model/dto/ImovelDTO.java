@@ -20,17 +20,17 @@ public class ImovelDTO {
     private String bairro;
     @NotBlank(message = "O cidade é obrigatória")
     private String cidade;
-    @NotBlank(message = "O descricao é obrigatória")
+    //@NotBlank(message = "O descricao é obrigatória")
     private String descricao;
 
     @NotNull(message = "O Valor de venda é obrigatória")
     private Long valorVenda;
-    @NotNull(message = "O quartos é obrigatória")
+    //@NotNull(message = "O quartos é obrigatória")
     private Long quartos;
-    @NotNull(message = "O banheiro é obrigatória")
+    //@NotNull(message = "O banheiro é obrigatória")
     private Long banheiros;
-    @NotNull(message = "O vaga é obrigatória")
+    //@NotNull(message = "O vaga é obrigatória")
     private Long vagas;
-    @NotNull(message = "A área é obrigatória")
+    //@NotNull(message = "A área é obrigatória")
     private Long area;
 }

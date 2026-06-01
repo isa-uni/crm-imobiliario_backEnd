@@ -32,6 +32,12 @@ public class ImovelController {
         return ResponseEntity.ok(imovel);
     }
 
+    @GetMapping("/disponivel")
+    public ResponseEntity<List<Imovel>> imovelDisponivel() {
+        List<Imovel> imovel = imovelService.ConsultarImoveisDisponiveis();
+        return ResponseEntity.ok(imovel);
+    }
+
     @PostMapping("/cadastrar")
     public ResponseEntity<?> cadastrarImovel(@RequestBody @Valid ImovelDTO dto) {
         try {

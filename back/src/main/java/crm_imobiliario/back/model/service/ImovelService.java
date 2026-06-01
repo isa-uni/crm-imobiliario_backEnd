@@ -94,7 +94,11 @@ public class ImovelService {
     }
 
     public List<Imovel> ConsultarImoveis() {
-        return imovelRepository.findAll();
+        return imovelRepository.findByAtivoTrue();
+    }
+
+    public List<Imovel> ConsultarImoveisDisponiveis() {
+        return imovelRepository.findByStatusAndAtivoTrue("disponivel");
     }
 
     public void inativarImovel(Long id) {
@@ -115,4 +119,11 @@ public class ImovelService {
         imovelRepository.save(imovel);
     }
 
+    public void deletarImovel(Long id){
+        Imovel imovel = imovelRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException(
+                        "Imovel com id " + id + " não encontrado"
+                ));
+        imovelRepository.delete(imovel);
+    }
 }

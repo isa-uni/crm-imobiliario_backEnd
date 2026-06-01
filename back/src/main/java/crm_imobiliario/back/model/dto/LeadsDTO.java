@@ -28,7 +28,7 @@ public class LeadsDTO {
     @NotNull(message = "A origem é obrigatória")
     private String origem;
 
-    @NotNull(message = "O stauss é obrigatória")
+    @NotNull(message = "O status é obrigatória")
     private String status;
 
     @NotNull(message = "O Valor de interesse é obrigatória")
@@ -39,6 +39,6 @@ public class LeadsDTO {
     
     // @NotNull(message = "O papel é obrigatória")
     // private Long papelId;
-    @NotNull(message = "O imóvel é obrigatória")
+    // @NotNull(message = "O imóvel é obrigatória")
     private Long imovelId;
 }

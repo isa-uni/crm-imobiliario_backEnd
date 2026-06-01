@@ -36,10 +36,14 @@ public class LeadsService {
         lead.setObservacao(dto.getObservacao());
         lead.setAtivo(true);
         
-        Imovel imovel = imovelRepository.findById(dto.getImovelId())
-                .orElseThrow(() -> new RuntimeException("Imóvel não encontrado"));
+        if (dto.getImovelId() != null) {
+            Imovel imovel = imovelRepository.findById(dto.getImovelId())
+                    .orElseThrow(() -> new RuntimeException("Imóvel não encontrado"));
 
-        lead.setImovel(imovel);
+            lead.setImovel(imovel);
+        } else {
+            lead.setImovel(null);
+        }
 
         try {
             return leadRepository.save(lead);
@@ -99,9 +103,9 @@ public class LeadsService {
                 .orElseThrow(() -> new RuntimeException("Imóvel não encontrado"));
 
             lead.setImovel(imovel);
+        }  else {
+            lead.setImovel(null); // <- remove o vínculo
         }
-
-        
 
         return leadRepository.save(lead);
     }
