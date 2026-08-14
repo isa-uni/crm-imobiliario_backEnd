@@ -1,5 +1,6 @@
 package crm_imobiliario.back.security;
 
+import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -22,6 +23,10 @@ public class CustomUserDetails implements UserDetailsService {
 
         if (usuario == null) {
             throw new UsernameNotFoundException("Usuário não encontrado");
+        }
+
+        if (!usuario.isAtivo()) {
+            throw new DisabledException("Usuário desativado");
         }
 
         return User.builder()

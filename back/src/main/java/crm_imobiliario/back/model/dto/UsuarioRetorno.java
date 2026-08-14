@@ -4,5 +4,6 @@ public record UsuarioRetorno (
         Long id,
         String nome,
         String email,
-        String papel
+        String papel,
+        boolean trocarSenha
 ) {}

@@ -21,6 +21,8 @@ import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
 import crm_imobiliario.back.model.service.UsuarioService;
+import jakarta.servlet.DispatcherType;
+import jakarta.servlet.http.HttpServletResponse;
 
 
 @Configuration
@@ -34,20 +36,34 @@ public class FilterChain {
                 .csrf(AbstractHttpConfigurer::disable)
                 .headers(headers -> headers.frameOptions(HeadersConfigurer.FrameOptionsConfig::disable))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .exceptionHandling(exception -> exception
+                        .authenticationEntryPoint((request, response, authException) -> {
+                            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                            response.setContentType("application/json");
+                            response.setCharacterEncoding("UTF-8");
+                            response.getWriter().write("{\"error\":\"Não autenticado\"}");
+                        })
+                        .accessDeniedHandler((request, response, accessDeniedException) -> {
+                            response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                            response.setContentType("application/json");
+                            response.setCharacterEncoding("UTF-8");
+                            response.getWriter().write("{\"error\":\"Acesso não permitido\"}");
+                        })
+                )
                 .authorizeHttpRequests(authorization -> {
+                    authorization.dispatcherTypeMatchers(DispatcherType.ERROR, DispatcherType.FORWARD).permitAll();
                     authorization.requestMatchers(HttpMethod.POST,"/login").permitAll();
-                    authorization.requestMatchers(HttpMethod.POST,"/usuarios/cadastrar").permitAll();
                     authorization.requestMatchers(HttpMethod.POST,"/leads/cadastrar").permitAll();
                     authorization.requestMatchers(HttpMethod.POST,"/imovel/cadastrar").permitAll();
                     authorization.requestMatchers(HttpMethod.GET,"/leads").permitAll();
                     authorization.requestMatchers(HttpMethod.GET,"/imovel").permitAll();
                     authorization.requestMatchers(HttpMethod.GET,"/imovel/disponivel").permitAll();
                     authorization.requestMatchers(HttpMethod.GET,"/leads/metrics").permitAll();
-                    // authorization.requestMatchers(HttpMethod.POST,"/usuarios/cadastrar").hasRole("admin");
-                    authorization.requestMatchers(HttpMethod.POST,"/papel/novo").permitAll();
-                    // authorization.requestMatchers(HttpMethod.POST,"/papel/novo").hasRole("admin");
-                    // authorization.requestMatchers(HttpMethod.DELETE,"/usuarios/deletar/**").hasRole("admin");
-                    authorization.requestMatchers(HttpMethod.DELETE,"/usuarios/deletar/**").permitAll();
+                    authorization.requestMatchers(HttpMethod.PUT,"/usuarios/minha-senha").authenticated();
+                    authorization.requestMatchers(HttpMethod.GET,"/usuarios/me").authenticated();
+                    authorization.requestMatchers("/usuarios/**").hasRole("admin");
+                    authorization.requestMatchers(HttpMethod.GET,"/papel").hasRole("admin");
+                    authorization.requestMatchers(HttpMethod.POST,"/papel/novo").hasRole("admin");
                     authorization.requestMatchers(HttpMethod.DELETE,"/leads/deletar/**").permitAll();
                     authorization.requestMatchers(HttpMethod.PUT,"/imovel/inativar/**").permitAll();
                     authorization.requestMatchers(HttpMethod.PUT,"/leads/inativar/**").permitAll();
@@ -56,8 +72,6 @@ public class FilterChain {
                     authorization.requestMatchers(HttpMethod.PUT,"/imovel/atualizar/**").permitAll();
                     authorization.requestMatchers(HttpMethod.PUT,"/leads/atualizar/**").permitAll();
                     authorization.requestMatchers("/h2-console/**").permitAll();
-                    // authorization.requestMatchers("/turmas/**").hasAnyRole("admin", "professor");
-                    // authorization.requestMatchers("/usuario-turma/**").hasAnyRole("admin", "professor");
                     authorization.anyRequest().authenticated();
                 })
                 .addFilterBefore(filter, UsernamePasswordAuthenticationFilter.class)

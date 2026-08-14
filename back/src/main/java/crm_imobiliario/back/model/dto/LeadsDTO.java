@@ -28,6 +28,9 @@ public class LeadsDTO {
     @NotNull(message = "A origem é obrigatória")
     private String origem;
 
+    @NotNull(message = "O histórico é obrigatória")
+    private String historico;
+
     @NotNull(message = "O status é obrigatória")
     private String status;
 

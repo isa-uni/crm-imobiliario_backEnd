@@ -42,6 +42,8 @@ public class Usuario {
     private LocalDate dataNascimento;
     @CreationTimestamp
     private LocalDate dataMatricula;
+    private boolean ativo = true;
+    private boolean trocarSenha = true;
     @PrePersist
     protected void onCreate() {
         this.dataMatricula = LocalDate.now();

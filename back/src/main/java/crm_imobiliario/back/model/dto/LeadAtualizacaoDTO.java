@@ -13,6 +13,7 @@ public class LeadAtualizacaoDTO {
     private String email;
     private String telefone;
     private String origem;
+    private String historico;
     private String status;
     private Long valorInteresse;
     private Long imovelId;

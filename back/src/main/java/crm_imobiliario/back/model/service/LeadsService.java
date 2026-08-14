@@ -31,6 +31,7 @@ public class LeadsService {
         lead.setEmail(dto.getEmail());
         lead.setTelefone(dto.getTelefone());
         lead.setOrigem(dto.getOrigem());
+        lead.setHistorico(dto.getHistorico());
         lead.setStatus(dto.getStatus());
         lead.setValorInteresse(dto.getValorInteresse());
         lead.setObservacao(dto.getObservacao());
@@ -72,6 +73,10 @@ public class LeadsService {
 
         if (dto.getOrigem() != null) {
             lead.setOrigem(dto.getOrigem());
+        }
+
+        if (dto.getHistorico() != null) {
+            lead.setHistorico(dto.getHistorico());
         }
 
         if (dto.getStatus() != null) {

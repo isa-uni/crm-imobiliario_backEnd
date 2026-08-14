@@ -34,6 +34,7 @@ public class Lead {
     private String email;
     private String telefone;
     private String origem;
+    private String historico;
     private String status;
     private Long valorInteresse;
     private String observacao;
@@ -43,6 +44,7 @@ public class Lead {
     private LocalDateTime dataCriacao;
     @UpdateTimestamp
     private LocalDateTime dataAtualizacao;
+    private String corretor_responsavel;
     
     // @ManyToOne
     // @JoinColumn(name = "papel_id")

@@ -9,6 +9,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import crm_imobiliario.back.model.dto.UsuarioDTO;
+import crm_imobiliario.back.model.dto.UsuarioResponse;
 import crm_imobiliario.back.model.entity.Papel;
 import crm_imobiliario.back.model.entity.Usuario;
 import crm_imobiliario.back.model.repository.PapelRepository;
@@ -38,6 +39,10 @@ public class UsuarioService {
             throw new RuntimeException("Já existe um usuario com esse CPF");
         }
 
+        if (usuarioRepository.existsByEmail(dto.getEmail())) {
+            throw new RuntimeException("Já existe um usuário com esse e-mail");
+        }
+
         String ano = String.valueOf(LocalDate.now().getYear());
         String matricula = ano + cpfLimpo.substring(cpfLimpo.length() - 4);
         String senhaInicial = cpfLimpo.substring(cpfLimpo.length() - 4);
@@ -49,6 +54,8 @@ public class UsuarioService {
         usuario.setTelefone(dto.getTelefone());
         usuario.setMatricula(matricula);
         usuario.setDataNascimento(dto.getDataNascimento());
+        usuario.setAtivo(true);
+        usuario.setTrocarSenha(true);
 
         Papel papel = papelRepository.findById(dto.getPapelId())
                 .orElseThrow(() -> new RuntimeException("Papel não encontrado"));
@@ -72,13 +79,20 @@ public class UsuarioService {
         usuarioRepository.delete(usuario);
     }
     
-    public List<Usuario> ConsultarUsuarios() {
-        return usuarioRepository.findAll();
+    public List<UsuarioResponse> ConsultarUsuarios() {
+        return usuarioRepository.findAll().stream()
+                .map(UsuarioResponse::from)
+                .toList();
     }
 
     public Usuario buscarPorEmail(String email) {
         return usuarioRepository.findByEmail(email) .orElseThrow(() ->
                         new RuntimeException("Usuário com E-mail "+email+" não encontrado"));
+    }
+
+    public Usuario buscarPorId(Long id) {
+        return usuarioRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Usuário com id " + id + " não encontrado"));
     }
 
     public boolean validarCPF(String cpf) {
@@ -128,12 +142,52 @@ public class UsuarioService {
         Usuario usuario = usuarioRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Usuário não encontrado"));
 
+        Papel papel = papelRepository.findById(dto.getPapelId())
+                .orElseThrow(() -> new RuntimeException("Papel não encontrado"));
+
         usuario.setEmail(dto.getEmail());
         usuario.setNome(dto.getNome());
         usuario.setGenero(dto.getGenero());
         usuario.setTelefone(dto.getTelefone());
         usuario.setDataNascimento(dto.getDataNascimento());
+        usuario.setPapel(papel);
 
+        return usuarioRepository.save(usuario);
+    }
+
+    public void trocarSenha(String email, String senhaAtual, String novaSenha) {
+        Usuario usuario = usuarioRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("Usuário não encontrado"));
+
+        if (!passwordEncoder.matches(senhaAtual, usuario.getSenha())) {
+            throw new RuntimeException("Senha atual incorreta");
+        }
+
+        usuario.setSenha(passwordEncoder.encode(novaSenha));
+        usuario.setTrocarSenha(false);
+        usuarioRepository.save(usuario);
+    }
+
+    public void trocarSenhaAdmin(Long id, String novaSenha) {
+        Usuario usuario = usuarioRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Usuário não encontrado"));
+
+        usuario.setSenha(passwordEncoder.encode(novaSenha));
+        usuario.setTrocarSenha(true);
+        usuarioRepository.save(usuario);
+    }
+
+    public Usuario inativarUsuario(Long id) {
+        Usuario usuario = usuarioRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Usuário com id " + id + " não encontrado"));
+        usuario.setAtivo(false);
+        return usuarioRepository.save(usuario);
+    }
+
+    public Usuario ativarUsuario(Long id) {
+        Usuario usuario = usuarioRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Usuário com id " + id + " não encontrado"));
+        usuario.setAtivo(true);
         return usuarioRepository.save(usuario);
     }
 }
