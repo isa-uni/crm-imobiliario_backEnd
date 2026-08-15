@@ -17,7 +17,9 @@ import org.springframework.web.bind.annotation.RestController;
 import crm_imobiliario.back.model.dto.LeadAtualizacaoDTO;
 import crm_imobiliario.back.model.dto.LeadsDTO;
 import crm_imobiliario.back.model.dto.MetricsDTO;
+import crm_imobiliario.back.model.dto.TramitacaoDTO;
 import crm_imobiliario.back.model.entity.Lead;
+import crm_imobiliario.back.model.entity.Tramitacao;
 import crm_imobiliario.back.model.service.LeadsService;
 import crm_imobiliario.back.util.DefaultResponse;
 import jakarta.validation.Valid;
@@ -88,5 +90,14 @@ public class LeadController {
     @GetMapping("/metrics")
     public ResponseEntity<MetricsDTO> getMetrics() {
         return ResponseEntity.ok(leadService.getMetrics());
+    }
+
+    @GetMapping("/{id}/tramitacoes")
+    public ResponseEntity<List<TramitacaoDTO>> listarTramitacoes(@PathVariable Long id) {
+        List<Tramitacao> tramitacoes = leadService.listarTramitacoes(id);
+        List<TramitacaoDTO> dto = tramitacoes.stream()
+                .map(TramitacaoDTO::from)
+                .toList();
+        return ResponseEntity.ok(dto);
     }
 }

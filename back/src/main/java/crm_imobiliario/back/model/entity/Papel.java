@@ -23,4 +23,5 @@ public class Papel {
     private Long id;
     @Column(unique = true)
     private String papel;
+    private Boolean ativo = true;
 }

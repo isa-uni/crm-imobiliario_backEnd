@@ -4,6 +4,8 @@ import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import crm_imobiliario.back.model.dto.LeadAtualizacaoDTO;
@@ -11,8 +13,11 @@ import crm_imobiliario.back.model.dto.LeadsDTO;
 import crm_imobiliario.back.model.dto.MetricsDTO;
 import crm_imobiliario.back.model.entity.Imovel;
 import crm_imobiliario.back.model.entity.Lead;
+import crm_imobiliario.back.model.entity.Tramitacao;
+import crm_imobiliario.back.model.entity.Usuario;
 import crm_imobiliario.back.model.repository.ImovelRepository;
 import crm_imobiliario.back.model.repository.LeadRepository;
+import crm_imobiliario.back.model.repository.TramitacaoRepository;
 
 @Service
 public class LeadsService {
@@ -22,6 +27,12 @@ public class LeadsService {
 
     @Autowired
     private ImovelRepository imovelRepository;
+
+    @Autowired
+    private TramitacaoRepository tramitacaoRepository;
+
+    @Autowired
+    private UsuarioService usuarioService;
 
     public Lead cadastrarLeads(LeadsDTO dto) {
 
@@ -47,7 +58,9 @@ public class LeadsService {
         }
 
         try {
-            return leadRepository.save(lead);
+            Lead salvo = leadRepository.save(lead);
+            registrarTramitacao(salvo, null, salvo.getStatus());
+            return salvo;
 
         } catch (DataIntegrityViolationException e) {
             throw new RuntimeException("Lead já cadastrado");
@@ -57,6 +70,8 @@ public class LeadsService {
     public Lead atualizarLeads(Long id, LeadAtualizacaoDTO dto) {
         Lead lead = leadRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Lead não encontrado"));
+
+        String statusAnterior = lead.getStatus();
 
             
         if (dto.getNome() != null) {
@@ -112,7 +127,60 @@ public class LeadsService {
             lead.setImovel(null); // <- remove o vínculo
         }
 
-        return leadRepository.save(lead);
+        Lead atualizado = leadRepository.save(lead);
+
+        if (dto.getStatus() != null && !dto.getStatus().equals(statusAnterior)) {
+            registrarTramitacao(atualizado, statusAnterior, atualizado.getStatus());
+        }
+
+        return atualizado;
+    }
+
+    public List<Tramitacao> listarTramitacoes(Long leadId) {
+        return tramitacaoRepository.findByLeadIdOrderByDataMovimentacaoAsc(leadId);
+    }
+
+    private void registrarTramitacao(Lead lead, String statusAnterior, String statusAtual) {
+        Tramitacao tramitacao = new Tramitacao();
+        tramitacao.setLead(lead);
+        tramitacao.setStatus_anterior(statusAnterior);
+        tramitacao.setStatus_atual(statusAtual);
+        
+        tramitacao.setUsuario(usuarioLogado());
+        tramitacaoRepository.save(tramitacao);
+    }
+
+    private Usuario usuarioLogado() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        // if (auth != null && auth.isAuthenticated() && auth.getName() != null) {
+        //     try {
+        //         return usuarioService.buscarPorEmail(auth.getName());
+        //     } catch (RuntimeException e) {
+        //         return null;
+        //     }
+        // }
+        if (auth == null) {
+            System.out.println("AUTH É NULL");
+            return null;
+        }
+
+        System.out.println("AUTH: " + auth);
+        System.out.println("AUTH NAME: " + auth.getName());
+        System.out.println("AUTHENTICATED: " + auth.isAuthenticated());
+
+        if (auth.isAuthenticated() && auth.getName() != null) {
+            Usuario usuario = usuarioService.buscarPorEmail(auth.getName());
+
+            System.out.println("USUARIO: " + usuario);
+            
+            if (usuario != null) {
+                System.out.println("USUARIO ID: " + usuario.getId());
+                System.out.println("USUARIO NOME: " + usuario.getNome());
+            }
+
+            return usuario;
+        }
+        return null;
     }
 
     public void inativarLead(Long id) {

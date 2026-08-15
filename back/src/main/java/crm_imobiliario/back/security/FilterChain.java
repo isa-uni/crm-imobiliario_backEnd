@@ -64,6 +64,7 @@ public class FilterChain {
                     authorization.requestMatchers("/usuarios/**").hasRole("admin");
                     authorization.requestMatchers(HttpMethod.GET,"/papel").hasRole("admin");
                     authorization.requestMatchers(HttpMethod.POST,"/papel/novo").hasRole("admin");
+                    authorization.requestMatchers(HttpMethod.DELETE,"/papel/**").hasRole("admin");
                     authorization.requestMatchers(HttpMethod.DELETE,"/leads/deletar/**").permitAll();
                     authorization.requestMatchers(HttpMethod.PUT,"/imovel/inativar/**").permitAll();
                     authorization.requestMatchers(HttpMethod.PUT,"/leads/inativar/**").permitAll();
