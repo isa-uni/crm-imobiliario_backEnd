@@ -26,14 +26,14 @@ public class PapelController {
     }
 
     @PostMapping("/papel/novo")
-    public ResponseEntity<Boolean> save(@RequestBody Papel papel) {
-        try {
-            papel.setAtivo(true);
-            papelRepository.save(papel);
-            return ResponseEntity.status(201).build();
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().build();
+    public ResponseEntity<?> save(@RequestBody @jakarta.validation.Valid Papel papel) {
+        if (papel.getPapel() == null || papel.getPapel().isBlank()) {
+            throw new IllegalArgumentException("Nome do papel é obrigatório.");
         }
+        papel.setPapel(papel.getPapel().trim().toLowerCase());
+        papel.setAtivo(true);
+        papelRepository.save(papel);
+        return ResponseEntity.status(201).body(java.util.Map.of("message", "Papel criado com sucesso"));
     }
 
     @DeleteMapping("/papel/{id}")

@@ -40,22 +40,14 @@ public class ImovelController {
 
     @PostMapping("/cadastrar")
     public ResponseEntity<?> cadastrarImovel(@RequestBody @Valid ImovelDTO dto) {
-        try {
-            Imovel salvo = imovelService.cadastrarImovel(dto);
-            return ResponseEntity.status(HttpStatus.CREATED).body(salvo);
-        } catch (RuntimeException e) {
-            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(e.getMessage());
-        }
+        Imovel salvo = imovelService.cadastrarImovel(dto);
+        return ResponseEntity.status(HttpStatus.CREATED).body(salvo);
     }
 
     @PutMapping("/atualizar/{id}")
     public ResponseEntity<?> atualizarImovel(@PathVariable Long id, @RequestBody @Valid ImovelAtualizacaoDTO dto) {
-        try {
-            Imovel atualizado = imovelService.atualizarimovel(id, dto);
-            return ResponseEntity.ok(atualizado);
-        } catch (RuntimeException e) {
-            return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
-        }
+        Imovel atualizado = imovelService.atualizarimovel(id, dto);
+        return ResponseEntity.ok(atualizado);
     }
 
     @PutMapping("/inativar/{id}")

@@ -25,7 +25,7 @@ public class UsuarioDTO {
     @NotBlank(message = "O genero é obrigatória")
     private String genero;
     @Pattern(
-        regexp = "^\\(?\\d{2}\\)?\\s?9?\\d{4}-?\\d{4}$",
+        regexp = "^\\(?\\d{2}\\)?\\s?\\d{4,5}-?\\d{4}$",
         message = "Telefone inválido"
     )
     @NotBlank(message = "O telefone é obrigatória")
@@ -34,4 +34,5 @@ public class UsuarioDTO {
     private LocalDate dataNascimento;
     @NotNull(message = "O papel é obrigatória")
     private Long papelId;
+    private Long gestorId;
 }

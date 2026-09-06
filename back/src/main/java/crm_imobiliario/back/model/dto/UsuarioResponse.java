@@ -15,7 +15,11 @@ public record UsuarioResponse(
         LocalDate dataNascimento,
         String papel,
         boolean ativo,
-        boolean trocarSenha
+        boolean trocarSenha,
+        Long gestorId,
+        String gestorNome,
+        Long equipeId,
+        String equipeNome
 ) {
     public static UsuarioResponse from(Usuario usuario) {
         return new UsuarioResponse(
@@ -29,7 +33,11 @@ public record UsuarioResponse(
                 usuario.getDataNascimento(),
                 usuario.getPapel() != null ? usuario.getPapel().getPapel() : null,
                 usuario.isAtivo(),
-                usuario.isTrocarSenha()
+                usuario.isTrocarSenha(),
+                usuario.getGestor() != null ? usuario.getGestor().getId() : null,
+                usuario.getGestor() != null ? usuario.getGestor().getNome() : null,
+                usuario.getEquipe() != null ? usuario.getEquipe().getId() : null,
+                usuario.getEquipe() != null ? usuario.getEquipe().getNome() : null
         );
     }
 

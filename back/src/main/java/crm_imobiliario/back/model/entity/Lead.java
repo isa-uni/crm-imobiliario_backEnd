@@ -14,6 +14,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -22,6 +23,7 @@ import lombok.Setter;
 @AllArgsConstructor
 @Getter
 @Setter
+@Builder
 @Entity(name = "lead")
 public class Lead {
     
@@ -45,10 +47,18 @@ public class Lead {
     @UpdateTimestamp
     private LocalDateTime dataAtualizacao;
     private String corretor_responsavel;
-    
-    // @ManyToOne
-    // @JoinColumn(name = "papel_id")
-    // private Papel papel;
+
+    @ManyToOne
+    @JoinColumn(name = "corretor_id")
+    private Usuario corretor;
+
+    @ManyToOne
+    @JoinColumn(name = "equipe_id")
+    private crm_imobiliario.back.model.entity.Equipe equipe;
+
+    @Column(nullable = false)
+    @Builder.Default
+    private String statusAtribuicao = "ATRIBUIDO";
 
     @ManyToOne
     @JoinColumn(name = "imovel_id")

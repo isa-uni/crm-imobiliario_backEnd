@@ -5,6 +5,8 @@ import java.time.LocalDate;
 import org.hibernate.annotations.CreationTimestamp;
 
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -34,6 +36,7 @@ public class Usuario {
     private String matricula;
     @Column(unique = true)
     private String email;
+    @JsonIgnore
     private String senha;
     @Column(unique = true)
     private String cpf;
@@ -51,4 +54,14 @@ public class Usuario {
     @ManyToOne
     @JoinColumn(name = "papel_id")
     private Papel papel;
+
+    @ManyToOne
+    @JoinColumn(name = "gestor_id")
+    private Usuario gestor;
+
+    @ManyToOne
+    @JoinColumn(name = "equipe_id")
+    private crm_imobiliario.back.model.entity.Equipe equipe;
+
+    private Integer tokenVersion = 0;
 }

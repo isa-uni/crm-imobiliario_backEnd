@@ -34,6 +34,18 @@ public class DataSeeder implements CommandLineRunner {
             Papel corretor = new Papel();
             corretor.setPapel("corretor");
             papelRepository.save(corretor);
+
+            Papel gestor = new Papel();
+            gestor.setPapel("gestor");
+            papelRepository.save(gestor);
+        } else {
+            // garante que papel gestor exista em bases já criadas
+            boolean hasGestor = papelRepository.findAll().stream().anyMatch(p -> "gestor".equals(p.getPapel()));
+            if (!hasGestor) {
+                Papel gestor = new Papel();
+                gestor.setPapel("gestor");
+                papelRepository.save(gestor);
+            }
         }
 
         if (usuarioRepository.count() == 0) {
@@ -49,7 +61,8 @@ public class DataSeeder implements CommandLineRunner {
                     "M",
                     "(11) 99999-9999",
                     LocalDate.of(1990, 1, 1),
-                    papelAdmin.getId()
+                    papelAdmin.getId(),
+                    null
             );
 
             usuarioService.cadastrarUsuario(adminDTO);

@@ -24,57 +24,62 @@ import crm_imobiliario.back.model.service.UsuarioService;
 import jakarta.servlet.DispatcherType;
 import jakarta.servlet.http.HttpServletResponse;
 
-
+//Um Filter fica no caminho entre o cliente e o Controller.
 @Configuration
 @EnableWebSecurity
 public class FilterChain {
 
     @Bean
-    public org.springframework.security.web.SecurityFilterChain securityFilterChain(HttpSecurity http, SecurityFilter filter) throws Exception {
+    public org.springframework.security.web.SecurityFilterChain securityFilterChain(HttpSecurity http, SecurityFilter filter, RateLimitFilter rateLimitFilter) throws Exception {
         return http
                 .cors(cors -> {})
                 .csrf(AbstractHttpConfigurer::disable)
-                .headers(headers -> headers.frameOptions(HeadersConfigurer.FrameOptionsConfig::disable))
+                .headers(headers -> {
+                    headers.frameOptions(HeadersConfigurer.FrameOptionsConfig::disable);
+                    headers.httpStrictTransportSecurity(hsts -> hsts.includeSubDomains(true).maxAgeInSeconds(31536000));
+                    headers.contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'self'"));
+                })
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint((request, response, authException) -> {
                             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
                             response.setContentType("application/json");
                             response.setCharacterEncoding("UTF-8");
-                            response.getWriter().write("{\"error\":\"Não autenticado\"}");
+                            String body = "{\"success\":false,\"message\":\"Não autenticado. Faça login novamente.\",\"code\":\"AUTH_REQUIRED\"}";
+                            try { // tenta usar ApiErrorResponse se ObjectMapper disponível
+                                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                                mapper.registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
+                                crm_imobiliario.back.util.ApiErrorResponse err = crm_imobiliario.back.util.ApiErrorResponse.builder()
+                                        .success(false).message("Não autenticado. Faça login novamente.").code("AUTH_REQUIRED")
+                                        .path(request.getRequestURI()).timestamp(java.time.Instant.now()).build();
+                                body = mapper.writeValueAsString(err);
+                            } catch (Exception ignored) {}
+                            response.getWriter().write(body);
                         })
                         .accessDeniedHandler((request, response, accessDeniedException) -> {
                             response.setStatus(HttpServletResponse.SC_FORBIDDEN);
                             response.setContentType("application/json");
                             response.setCharacterEncoding("UTF-8");
-                            response.getWriter().write("{\"error\":\"Acesso não permitido\"}");
+                            String body = "{\"success\":false,\"message\":\"Você não possui permissão para realizar esta ação.\",\"code\":\"FORBIDDEN\"}";
+                            try {
+                                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                                mapper.registerModule(new com.fasterxml.jackson.datatype.jsr310.JavaTimeModule());
+                                crm_imobiliario.back.util.ApiErrorResponse err = crm_imobiliario.back.util.ApiErrorResponse.builder()
+                                        .success(false).message("Você não possui permissão para realizar esta ação.").code("FORBIDDEN")
+                                        .path(request.getRequestURI()).timestamp(java.time.Instant.now()).build();
+                                body = mapper.writeValueAsString(err);
+                            } catch (Exception ignored) {}
+                            response.getWriter().write(body);
                         })
                 )
                 .authorizeHttpRequests(authorization -> {
                     authorization.dispatcherTypeMatchers(DispatcherType.ERROR, DispatcherType.FORWARD).permitAll();
                     authorization.requestMatchers(HttpMethod.POST,"/login").permitAll();
-                    authorization.requestMatchers(HttpMethod.POST,"/leads/cadastrar").permitAll();
-                    authorization.requestMatchers(HttpMethod.POST,"/imovel/cadastrar").permitAll();
-                    authorization.requestMatchers(HttpMethod.GET,"/leads").permitAll();
-                    authorization.requestMatchers(HttpMethod.GET,"/imovel").permitAll();
-                    authorization.requestMatchers(HttpMethod.GET,"/imovel/disponivel").permitAll();
-                    authorization.requestMatchers(HttpMethod.GET,"/leads/metrics").permitAll();
-                    authorization.requestMatchers(HttpMethod.PUT,"/usuarios/minha-senha").authenticated();
-                    authorization.requestMatchers(HttpMethod.GET,"/usuarios/me").authenticated();
-                    authorization.requestMatchers("/usuarios/**").hasRole("admin");
-                    authorization.requestMatchers(HttpMethod.GET,"/papel").hasRole("admin");
-                    authorization.requestMatchers(HttpMethod.POST,"/papel/novo").hasRole("admin");
-                    authorization.requestMatchers(HttpMethod.DELETE,"/papel/**").hasRole("admin");
-                    authorization.requestMatchers(HttpMethod.DELETE,"/leads/deletar/**").permitAll();
-                    authorization.requestMatchers(HttpMethod.PUT,"/imovel/inativar/**").permitAll();
-                    authorization.requestMatchers(HttpMethod.PUT,"/leads/inativar/**").permitAll();
-                    authorization.requestMatchers(HttpMethod.PUT,"/imovel/ativar/**").permitAll();
-                    authorization.requestMatchers(HttpMethod.PUT,"/leads/ativar/**").permitAll();
-                    authorization.requestMatchers(HttpMethod.PUT,"/imovel/atualizar/**").permitAll();
-                    authorization.requestMatchers(HttpMethod.PUT,"/leads/atualizar/**").permitAll();
+                    authorization.requestMatchers(HttpMethod.POST,"/auth/refresh").permitAll();
                     authorization.requestMatchers("/h2-console/**").permitAll();
                     authorization.anyRequest().authenticated();
                 })
+                .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
                 .addFilterBefore(filter, UsernamePasswordAuthenticationFilter.class)
                 .build();
     }
@@ -98,9 +103,10 @@ public class FilterChain {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
 
-        configuration.setAllowedOrigins(List.of("http://localhost:3000"));
+        configuration.setAllowedOriginPatterns(List.of("http://localhost:3000", "http://localhost:5173"));
         configuration.setAllowedMethods(List.of("GET","POST","PUT","DELETE","PATCH","OPTIONS"));
-        configuration.setAllowedHeaders(List.of("*"));
+        configuration.setAllowedHeaders(List.of("Authorization","Content-Type","X-Requested-With","Accept"));
+        configuration.setExposedHeaders(List.of("Set-Cookie"));
         configuration.setAllowCredentials(true);
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
