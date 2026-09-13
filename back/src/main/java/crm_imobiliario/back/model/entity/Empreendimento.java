@@ -45,11 +45,21 @@ public class Empreendimento {
     @Column(nullable = false, unique = true)
     private String slug;
 
+    private String codigoExterno;
+    private String descricaoCurta;
+    @Column(columnDefinition = "TEXT")
+    private String descricaoCompleta;
+    private String incorporadora;
+    private String construtora;
+
     private String cidade;
     private String uf;
     private String regiao;
     private String bairro;
     private String endereco;
+    private String numero;
+    private String complemento;
+    private String cep;
 
     private Double lat;
     private Double lng;
@@ -104,6 +114,9 @@ public class Empreendimento {
     private String unmatchedReason;
 
     private Instant ultimaSincronizacao;
+
+    private Long criadoPor;
+    private Long atualizadoPor;
 
     @CreationTimestamp
     private Instant dataCadastro;

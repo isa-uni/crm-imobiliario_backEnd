@@ -49,6 +49,8 @@ public class Unidade {
     private String posicao;
 
     private Double areaPrivativa;
+    private Double areaComum;
+    private Double outrasAreas;
 
     /** 2Q - Garden */
     private String tipologia;
@@ -61,6 +63,27 @@ public class Unidade {
 
     @Column(columnDefinition = "TEXT")
     private String precoHash;
+
+    /** Raw — pode ser código de vaga (ex.: "VR25"), quantidade ou descrição; significado varia por documento (§6 do spec de importação), nunca reinterpretado automaticamente. */
+    private String garagem;
+
+    private Long ato;
+    private Long subsidioCohapar;
+    private Long financiamento;
+    private Long valorAvaliacao;
+
+    @Column(columnDefinition = "TEXT")
+    private String observacoes;
+
+    /** Documento (upload) de onde esta unidade foi extraída pela última vez. */
+    private Long documentoOrigemId;
+
+    /** Linha na tabela de origem (1-based) — rastreabilidade (§12 do spec). */
+    private Integer linhaOrigem;
+
+    /** confirmado | revisao — unidades com campo de baixa confiança ou conflito entram como 'revisao'. */
+    @Builder.Default
+    private String statusValidacao = "confirmado";
 
     private Instant ultimaSincronizacao;
 

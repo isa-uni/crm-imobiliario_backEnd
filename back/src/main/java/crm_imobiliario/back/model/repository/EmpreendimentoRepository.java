@@ -23,8 +23,8 @@ public interface EmpreendimentoRepository extends JpaRepository<Empreendimento, 
     List<Empreendimento> findByAtivoTrueAndDisponiveisGreaterThan(int disponiveis);
 
     @Query("SELECT e FROM Empreendimento e WHERE e.ativo = true " +
-           "AND (:cidade IS NULL OR LOWER(e.cidade) = LOWER(:cidade)) " +
-           "AND (:regiao IS NULL OR LOWER(e.regiao) = LOWER(:regiao)) " +
+           "AND (CAST(:cidade AS string) IS NULL OR LOWER(e.cidade) = LOWER(CAST(:cidade AS string))) " +
+           "AND (CAST(:regiao AS string) IS NULL OR LOWER(e.regiao) = LOWER(CAST(:regiao AS string))) " +
            "AND (:disponiveis IS NULL OR :disponiveis = false OR e.disponiveis > 0) " +
            "AND (:precoMin IS NULL OR e.precoMin >= :precoMin) " +
            "AND (:precoMax IS NULL OR e.precoMax <= :precoMax)")
