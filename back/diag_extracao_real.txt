@@ -1,0 +1,387 @@
+=========================================
+ARQUIVO: C-PRD - Book - Felicce (Digital).pdf
+=========================================
+identificacao: {
+  "nome" : {
+    "valor" : "Residencial Felicce",
+    "confianca" : 75,
+    "pagina" : 2,
+    "trecho_original" : "Seja bem-vindo ao Residencial Felicce",
+    "documento_nome" : "C-PRD - Book - Felicce (Digital).pdf"
+  }
+}
+localizacao: {
+  "regiao" : {
+    "valor" : "Zona Norte",
+    "confianca" : 65,
+    "pagina" : 2,
+    "trecho_original" : "Zona Norte de \r\nLondrina",
+    "documento_nome" : "C-PRD - Book - Felicce (Digital).pdf"
+  },
+  "cidade" : {
+    "valor" : "Londrina",
+    "confianca" : 70,
+    "pagina" : 2,
+    "trecho_original" : "Zona Norte de \r\nLondrina",
+    "documento_nome" : "C-PRD - Book - Felicce (Digital).pdf"
+  },
+  "endereco" : {
+    "valor" : "Rua Giocondo Maturi",
+    "confianca" : 55,
+    "pagina" : 3,
+    "trecho_original" : "Rua Giocondo Maturi, nº1400",
+    "documento_nome" : "C-PRD - Book - Felicce (Digital).pdf"
+  },
+  "numero" : {
+    "valor" : "1400",
+    "confianca" : 55,
+    "pagina" : 3,
+    "trecho_original" : "Rua Giocondo Maturi, nº1400",
+    "documento_nome" : "C-PRD - Book - Felicce (Digital).pdf"
+  }
+}
+caracteristicas: {
+  "quartos_min" : {
+    "valor" : "2",
+    "confianca" : 65,
+    "pagina" : 12,
+    "trecho_original" : "2 QUARTOS",
+    "documento_nome" : "C-PRD - Book - Felicce (Digital).pdf"
+  },
+  "quartos_max" : {
+    "valor" : "2",
+    "confianca" : 65,
+    "pagina" : 12,
+    "trecho_original" : "2 QUARTOS",
+    "documento_nome" : "C-PRD - Book - Felicce (Digital).pdf"
+  },
+  "metragem_min" : {
+    "valor" : "35,82",
+    "confianca" : 70,
+    "pagina" : 12,
+    "trecho_original" : "35,82m²",
+    "documento_nome" : "C-PRD - Book - Felicce (Digital).pdf"
+  },
+  "metragem_max" : {
+    "valor" : "48,99",
+    "confianca" : 70,
+    "pagina" : 12,
+    "trecho_original" : "35,82m² + 13,17 m²",
+    "documento_nome" : "C-PRD - Book - Felicce (Digital).pdf"
+  },
+  "possui_elevador" : {
+    "valor" : "true",
+    "confianca" : 75,
+    "pagina" : 12,
+    "trecho_original" : "com elevador",
+    "documento_nome" : "C-PRD - Book - Felicce (Digital).pdf"
+  },
+  "unidades_por_andar" : {
+    "valor" : "4",
+    "confianca" : 80,
+    "pagina" : 12,
+    "trecho_original" : "4 unidades por andar",
+    "documento_nome" : "C-PRD - Book - Felicce (Digital).pdf"
+  },
+  "vagas_min" : {
+    "valor" : "1",
+    "confianca" : 75,
+    "pagina" : 12,
+    "trecho_original" : "1 vaga de garagem",
+    "documento_nome" : "C-PRD - Book - Felicce (Digital).pdf"
+  },
+  "vagas_max" : {
+    "valor" : "1",
+    "confianca" : 75,
+    "pagina" : 12,
+    "trecho_original" : "1 vaga de garagem",
+    "documento_nome" : "C-PRD - Book - Felicce (Digital).pdf"
+  }
+}
+ALERTAS:
+
+=========================================
+ARQUIVO: C-PRD - Book - London Plaza (Digital).pdf
+=========================================
+identificacao: {
+  "nome" : {
+    "valor" : "Residencial London Plaza",
+    "confianca" : 75,
+    "pagina" : 2,
+    "trecho_original" : "Seja bem-vindo ao Residencial London Plaza",
+    "documento_nome" : "C-PRD - Book - London Plaza (Digital).pdf"
+  }
+}
+localizacao: {
+  "regiao" : {
+    "valor" : "Zona Norte",
+    "confianca" : 65,
+    "pagina" : 2,
+    "trecho_original" : "Zona Norte \r\nde Londrina",
+    "documento_nome" : "C-PRD - Book - London Plaza (Digital).pdf"
+  },
+  "cidade" : {
+    "valor" : "Londrina",
+    "confianca" : 70,
+    "pagina" : 2,
+    "trecho_original" : "Zona Norte \r\nde Londrina",
+    "documento_nome" : "C-PRD - Book - London Plaza (Digital).pdf"
+  },
+  "endereco" : {
+    "valor" : "Av. Rosalvo Marques Bonfim",
+    "confianca" : 55,
+    "pagina" : 3,
+    "trecho_original" : "Av. Rosalvo Marques Bonfim, 1433",
+    "documento_nome" : "C-PRD - Book - London Plaza (Digital).pdf"
+  },
+  "numero" : {
+    "valor" : "1433",
+    "confianca" : 55,
+    "pagina" : 3,
+    "trecho_original" : "Av. Rosalvo Marques Bonfim, 1433",
+    "documento_nome" : "C-PRD - Book - London Plaza (Digital).pdf"
+  }
+}
+caracteristicas: {
+  "quartos_min" : {
+    "valor" : "2",
+    "confianca" : 65,
+    "pagina" : 14,
+    "trecho_original" : "2 QUARTOS",
+    "documento_nome" : "C-PRD - Book - London Plaza (Digital).pdf"
+  },
+  "quartos_max" : {
+    "valor" : "2",
+    "confianca" : 65,
+    "pagina" : 14,
+    "trecho_original" : "2 QUARTOS",
+    "documento_nome" : "C-PRD - Book - London Plaza (Digital).pdf"
+  },
+  "metragem_min" : {
+    "valor" : "39,50",
+    "confianca" : 70,
+    "pagina" : 14,
+    "trecho_original" : "39,50m²",
+    "documento_nome" : "C-PRD - Book - London Plaza (Digital).pdf"
+  },
+  "metragem_max" : {
+    "valor" : "48,72",
+    "confianca" : 70,
+    "pagina" : 14,
+    "trecho_original" : "39,50m² + 9,22m²",
+    "documento_nome" : "C-PRD - Book - London Plaza (Digital).pdf"
+  },
+  "pavimentos" : {
+    "valor" : "7",
+    "confianca" : 80,
+    "pagina" : 14,
+    "trecho_original" : "Torres de 7 pavimentos",
+    "documento_nome" : "C-PRD - Book - London Plaza (Digital).pdf"
+  },
+  "possui_elevador" : {
+    "valor" : "true",
+    "confianca" : 75,
+    "pagina" : 14,
+    "trecho_original" : "com elevador",
+    "documento_nome" : "C-PRD - Book - London Plaza (Digital).pdf"
+  },
+  "unidades_por_andar" : {
+    "valor" : "4",
+    "confianca" : 80,
+    "pagina" : 14,
+    "trecho_original" : "4 unidades por andar",
+    "documento_nome" : "C-PRD - Book - London Plaza (Digital).pdf"
+  },
+  "vagas_min" : {
+    "valor" : "1",
+    "confianca" : 75,
+    "pagina" : 14,
+    "trecho_original" : "1 vaga de garagem",
+    "documento_nome" : "C-PRD - Book - London Plaza (Digital).pdf"
+  },
+  "vagas_max" : {
+    "valor" : "1",
+    "confianca" : 75,
+    "pagina" : 14,
+    "trecho_original" : "1 vaga de garagem",
+    "documento_nome" : "C-PRD - Book - London Plaza (Digital).pdf"
+  }
+}
+ALERTAS:
+
+=========================================
+ARQUIVO: C-PRD - Book - Marbella (Digital) 2.pdf
+=========================================
+identificacao: {
+  "nome" : {
+    "valor" : "Residencial Marbella",
+    "confianca" : 65,
+    "pagina" : 2,
+    "trecho_original" : "Residencial Marbella",
+    "documento_nome" : "C-PRD - Book - Marbella (Digital) 2.pdf"
+  }
+}
+localizacao: {
+  "endereco" : {
+    "valor" : "Rua das Araucárias",
+    "confianca" : 55,
+    "pagina" : 3,
+    "trecho_original" : "Rua das Araucárias, 200 - Jardim Araucária ",
+    "documento_nome" : "C-PRD - Book - Marbella (Digital) 2.pdf"
+  },
+  "numero" : {
+    "valor" : "200",
+    "confianca" : 55,
+    "pagina" : 3,
+    "trecho_original" : "Rua das Araucárias, 200 - Jardim Araucária ",
+    "documento_nome" : "C-PRD - Book - Marbella (Digital) 2.pdf"
+  },
+  "bairro" : {
+    "valor" : "Jardim Araucária",
+    "confianca" : 55,
+    "pagina" : 3,
+    "trecho_original" : "Rua das Araucárias, 200 - Jardim Araucária ",
+    "documento_nome" : "C-PRD - Book - Marbella (Digital) 2.pdf"
+  }
+}
+caracteristicas: {
+  "quartos_min" : {
+    "valor" : "2",
+    "confianca" : 65,
+    "pagina" : 12,
+    "trecho_original" : "2 Quartos",
+    "documento_nome" : "C-PRD - Book - Marbella (Digital) 2.pdf"
+  },
+  "quartos_max" : {
+    "valor" : "2",
+    "confianca" : 65,
+    "pagina" : 12,
+    "trecho_original" : "2 Quartos",
+    "documento_nome" : "C-PRD - Book - Marbella (Digital) 2.pdf"
+  },
+  "metragem_min" : {
+    "valor" : "35,81",
+    "confianca" : 70,
+    "pagina" : 12,
+    "trecho_original" : "35,81m²",
+    "documento_nome" : "C-PRD - Book - Marbella (Digital) 2.pdf"
+  },
+  "metragem_max" : {
+    "valor" : "48,66",
+    "confianca" : 70,
+    "pagina" : 12,
+    "trecho_original" : "35,81m² + 12,85m²",
+    "documento_nome" : "C-PRD - Book - Marbella (Digital) 2.pdf"
+  },
+  "pavimentos" : {
+    "valor" : "4",
+    "confianca" : 80,
+    "pagina" : 12,
+    "trecho_original" : "Torres de \r\n4 pavimentos",
+    "documento_nome" : "C-PRD - Book - Marbella (Digital) 2.pdf"
+  },
+  "vagas_min" : {
+    "valor" : "1",
+    "confianca" : 75,
+    "pagina" : 12,
+    "trecho_original" : "1 vaga de garagem",
+    "documento_nome" : "C-PRD - Book - Marbella (Digital) 2.pdf"
+  },
+  "vagas_max" : {
+    "valor" : "1",
+    "confianca" : 75,
+    "pagina" : 12,
+    "trecho_original" : "1 vaga de garagem",
+    "documento_nome" : "C-PRD - Book - Marbella (Digital) 2.pdf"
+  }
+}
+ALERTAS:
+
+=========================================
+ARQUIVO: C-PRD - Book Digital - Solare.pdf
+=========================================
+identificacao: {
+  "nome" : {
+    "valor" : "Solare Essenza",
+    "confianca" : 75,
+    "pagina" : 2,
+    "trecho_original" : "Seja bem-vindo ao Solare Essenza",
+    "documento_nome" : "C-PRD - Book Digital - Solare.pdf"
+  }
+}
+localizacao: {
+  "regiao" : {
+    "valor" : "Zona Sul",
+    "confianca" : 65,
+    "pagina" : 2,
+    "trecho_original" : "Zona Sul de Londrina",
+    "documento_nome" : "C-PRD - Book Digital - Solare.pdf"
+  },
+  "cidade" : {
+    "valor" : "Londrina",
+    "confianca" : 70,
+    "pagina" : 2,
+    "trecho_original" : "Zona Sul de Londrina",
+    "documento_nome" : "C-PRD - Book Digital - Solare.pdf"
+  },
+  "endereco" : {
+    "valor" : "Avenida 01 Residencial Alvorada",
+    "confianca" : 75,
+    "pagina" : 4,
+    "trecho_original" : "Avenida 01 Residencial Alvorada, 570 | Londrina - PR",
+    "documento_nome" : "C-PRD - Book Digital - Solare.pdf"
+  },
+  "numero" : {
+    "valor" : "570",
+    "confianca" : 80,
+    "pagina" : 4,
+    "trecho_original" : "Avenida 01 Residencial Alvorada, 570 | Londrina - PR",
+    "documento_nome" : "C-PRD - Book Digital - Solare.pdf"
+  },
+  "estado" : {
+    "valor" : "PR",
+    "confianca" : 80,
+    "pagina" : 4,
+    "trecho_original" : "Avenida 01 Residencial Alvorada, 570 | Londrina - PR",
+    "documento_nome" : "C-PRD - Book Digital - Solare.pdf"
+  }
+}
+caracteristicas: {
+  "quartos_min" : {
+    "valor" : "2",
+    "confianca" : 65,
+    "pagina" : 14,
+    "trecho_original" : "2 QUARTOS",
+    "documento_nome" : "C-PRD - Book Digital - Solare.pdf"
+  },
+  "quartos_max" : {
+    "valor" : "2",
+    "confianca" : 65,
+    "pagina" : 14,
+    "trecho_original" : "2 QUARTOS",
+    "documento_nome" : "C-PRD - Book Digital - Solare.pdf"
+  },
+  "unidades_por_andar" : {
+    "valor" : "4",
+    "confianca" : 80,
+    "pagina" : 14,
+    "trecho_original" : "4 unidades por andar",
+    "documento_nome" : "C-PRD - Book Digital - Solare.pdf"
+  },
+  "vagas_min" : {
+    "valor" : "1",
+    "confianca" : 75,
+    "pagina" : 14,
+    "trecho_original" : "1 vaga de garagem",
+    "documento_nome" : "C-PRD - Book Digital - Solare.pdf"
+  },
+  "vagas_max" : {
+    "valor" : "1",
+    "confianca" : 75,
+    "pagina" : 14,
+    "trecho_original" : "1 vaga de garagem",
+    "documento_nome" : "C-PRD - Book Digital - Solare.pdf"
+  }
+}
+ALERTAS:
+

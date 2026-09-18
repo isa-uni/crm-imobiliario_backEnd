@@ -21,7 +21,7 @@ public class DashboardGestorDTO {
     private TempoMedioDTO tempoMedio;
     private List<OrigemDTO> origens;
     private List<HistoricoDTO> historico;
-    private List<ImovelInteresseDTO> imoveisMaisProcurados;
+    private List<EmpreendimentoInteresseDTO> empreendimentosMaisProcurados;
     private List<AlertaDTO> alertas;
 
     @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
@@ -74,7 +74,9 @@ public class DashboardGestorDTO {
     public static class MetaCorretorDTO {
         private Long corretorId;
         private String nome;
-        private Integer metaContratos;
+        private Integer metaContratos; // meta efetiva: a própria quando definida, senão a do gestor
+        private Integer metaGestor; // meta atribuída pelo gestor, se houver
+        private Integer metaPropria; // meta definida pelo próprio corretor, se houver
         private long realizadoContratos;
         private double percentualContratos;
         private String status; // atingida, proxima, abaixo, sem_meta
@@ -121,9 +123,9 @@ public class DashboardGestorDTO {
     }
 
     @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
-    public static class ImovelInteresseDTO {
-        private Long imovelId;
-        private String titulo;
+    public static class EmpreendimentoInteresseDTO {
+        private Long empreendimentoId;
+        private String nome;
         private long interessados;
         private long propostas;
         private long negocios;

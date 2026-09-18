@@ -81,6 +81,81 @@ class DocumentExtractionOrchestratorTest {
         }
     }
 
+    private Path escreverPdfMultiPagina(String nomeArquivo, String... textoPorPagina) throws IOException {
+        try (PDDocument doc = new PDDocument()) {
+            for (String textoPagina : textoPorPagina) {
+                PDPage page = new PDPage(PDRectangle.A4);
+                doc.addPage(page);
+                try (PDPageContentStream cs = new PDPageContentStream(doc, page)) {
+                    float y = 700;
+                    for (String linha : textoPagina.split("\n")) {
+                        cs.beginText();
+                        cs.setFont(new PDType1Font(Standard14Fonts.FontName.HELVETICA), 10);
+                        cs.newLineAtOffset(50, y);
+                        cs.showText(linha);
+                        cs.endText();
+                        y -= 20;
+                    }
+                }
+            }
+            Path p = tempDir.resolve(nomeArquivo);
+            doc.save(p.toFile());
+            return p;
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private String enderecoExtraido(EmpreendimentoExtractionService.ExtractionResult r) {
+        var resultado = (java.util.Map<String, Object>) r.resultadoJson;
+        var localizacao = (java.util.Map<String, Object>) resultado.get("localizacao");
+        if (localizacao == null) return null;
+        var endereco = (java.util.Map<String, Object>) localizacao.get("endereco");
+        return endereco == null ? null : (String) endereco.get("valor");
+    }
+
+    @Test
+    void ultimaPaginaDeBookNaoEUsadaComoFonteDoEnderecoMasPaginaAnteriorSim() throws IOException {
+        // reproduz a estrutura real dos books da Pride: endereço do empreendimento numa página do meio,
+        // endereço institucional da Pride (site + "Central de Vendas") na última página.
+        Path pdf = escreverPdfMultiPagina("C-PRD - Book - Exemplo (Digital).pdf",
+                "Seu sonho de morar bem começa aqui.",
+                "Rua das Flores, 100\nLondrina/PR",
+                "construtorapride.com.br @meuapepride\nAv. Saul Elkind,3439 \nLondrina/PR \nCentral de Vendas:");
+
+        EmpreendimentoExtractionService.ExtractionResult r = orchestrator.extract(
+                List.of(documento(1, "C-PRD - Book - Exemplo (Digital).pdf", pdf)));
+
+        assertEquals("Rua das Flores", enderecoExtraido(r), "deve usar o endereço da página elegível, não o da última página");
+        assertTrue(r.fontes.stream().noneMatch(f -> "localizacao.endereco".equals(f.campo) && "Av. Saul Elkind".equals(f.valorExtraido)),
+                "endereço da Pride na última página não pode aparecer nem como fonte alternativa");
+    }
+
+    @Test
+    void bookDeUmaUnicaPaginaComEnderecoDaPrideNaoGeraEnderecoDoEmpreendimento() throws IOException {
+        // um Book de página única é, por definição, também a última página — continua fora de escopo.
+        Path pdf = escreverPdfMultiPagina("Book Institucional.pdf",
+                "construtorapride.com.br\nAv. Saul Elkind,3439 \nLondrina/PR \nCentral de Vendas:");
+
+        EmpreendimentoExtractionService.ExtractionResult r = orchestrator.extract(
+                List.of(documento(1, "Book Institucional.pdf", pdf)));
+
+        assertNull(enderecoExtraido(r), "book de página única não deve usar sua única página como fonte do endereço");
+    }
+
+    @Test
+    void documentoQueNaoEBookUsaAUltimaPaginaNormalmente() throws IOException {
+        // a regra de ignorar a última página é exclusiva de Books (§2 do spec) — outros PDFs de texto
+        // livre (sem "book" no nome) continuam usando todas as páginas normalmente.
+        Path pdf = escreverPdfMultiPagina("Memorial Descritivo Residencial.pdf",
+                "Informações gerais do empreendimento.",
+                "Rua Example, 500\nLondrina/PR");
+
+        EmpreendimentoExtractionService.ExtractionResult r = orchestrator.extract(
+                List.of(documento(1, "Memorial Descritivo Residencial.pdf", pdf)));
+
+        assertEquals("Rua Example", enderecoExtraido(r), "documento que não é Book não deve ter a última página descartada");
+    }
+
     private void escreverLinha(PDPageContentStream cs, float y, String... colunas) throws IOException {
         float x = 50;
         for (String coluna : colunas) {

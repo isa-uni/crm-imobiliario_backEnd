@@ -15,6 +15,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import crm_imobiliario.back.model.dto.MetaCreateDTO;
 import crm_imobiliario.back.model.dto.MetaDTO;
+import crm_imobiliario.back.model.dto.MetaResumoDTO;
+import crm_imobiliario.back.model.entity.OrigemMeta;
 import crm_imobiliario.back.model.entity.Usuario;
 import crm_imobiliario.back.model.repository.UsuarioRepository;
 import crm_imobiliario.back.model.service.MetaService;
@@ -33,7 +35,8 @@ public class MetaController {
     private UsuarioRepository usuarioRepository;
 
     /**
-     * Busca meta do usuário autenticado para um mês específico.
+     * Busca a meta própria e a meta atribuída pelo gestor do usuário autenticado para um mês
+     * específico, mais qual delas vale (própria tem prioridade sobre a do gestor).
      * GET /metas/me?mesReferencia=2026-09-01 (primeiro dia do mês)
      */
     @GetMapping("/me")
@@ -41,15 +44,14 @@ public class MetaController {
             Authentication auth,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate mesReferencia) {
         Usuario solicitante = usuarioService.buscarPorEmail(auth.getName());
-        MetaDTO dto = metaService.buscarPorUsuarioEMes(solicitante.getId(), mesReferencia);
-        if (dto == null) return ResponseEntity.noContent().build();
-        return ResponseEntity.ok(dto);
+        MetaResumoDTO resumo = metaService.buscarResumo(solicitante.getId(), mesReferencia);
+        return ResponseEntity.ok(resumo);
     }
 
     /**
      * Cria ou atualiza meta.
-     * - Corretor pode criar/atualizar apenas a própria meta
-     * - Gestor/Admin pode criar para qualquer usuário (ideal para SalesClock pessoal + dashboard gestor)
+     * - Corretor pode criar/atualizar apenas a própria meta (origem CORRETOR)
+     * - Gestor/Admin pode criar para qualquer usuário (origem GESTOR), ideal para o dashboard gestor
      */
     @PostMapping
     public ResponseEntity<?> criarOuAtualizar(@RequestBody @Valid MetaCreateDTO dto, Authentication auth) {
@@ -73,7 +75,9 @@ public class MetaController {
             }
         }
 
-        MetaDTO salvo = metaService.criarOuAtualizar(dto);
+        // definindo a própria meta (mesmo sendo gestor/admin) = origem CORRETOR; definindo para outro usuário = origem GESTOR
+        OrigemMeta origem = solicitante.getId().equals(dto.getUsuarioId()) ? OrigemMeta.CORRETOR : OrigemMeta.GESTOR;
+        MetaDTO salvo = metaService.criarOuAtualizar(dto, origem);
         return ResponseEntity.ok(salvo);
     }
 }

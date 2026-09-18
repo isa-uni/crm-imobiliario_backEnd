@@ -18,6 +18,10 @@ public interface EmpreendimentoRepository extends JpaRepository<Empreendimento, 
 
     Optional<Empreendimento> findByCodigoCrm(String codigoCrm);
 
+    Optional<Empreendimento> findByCodigoExterno(String codigoExterno);
+
+    boolean existsByCodigoExterno(String codigoExterno);
+
     List<Empreendimento> findByAtivoTrue();
 
     List<Empreendimento> findByAtivoTrueAndDisponiveisGreaterThan(int disponiveis);

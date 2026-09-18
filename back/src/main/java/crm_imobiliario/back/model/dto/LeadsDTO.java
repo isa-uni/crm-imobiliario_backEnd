@@ -42,6 +42,6 @@ public class LeadsDTO {
     
     // @NotNull(message = "O papel é obrigatória")
     // private Long papelId;
-    // @NotNull(message = "O imóvel é obrigatória")
-    private Long imovelId;
+    // @NotNull(message = "O empreendimento é obrigatória")
+    private Long empreendimentoId;
 }

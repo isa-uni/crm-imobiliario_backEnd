@@ -96,7 +96,16 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ApiErrorResponse> handleDataIntegrity(DataIntegrityViolationException ex, HttpServletRequest request) {
-        log.warn("DataIntegrityViolation on {}: {}", request.getRequestURI(), ex.getMostSpecificCause().getMessage());
+        String cause = ex.getMostSpecificCause() != null ? ex.getMostSpecificCause().getMessage() : "";
+        String causeLower = cause != null ? cause.toLowerCase() : "";
+        log.warn("DataIntegrityViolation on {}: {}", request.getRequestURI(), cause);
+        if (causeLower.contains("idx_emp_codigo_ext") || causeLower.contains("codigo_externo")) {
+            Map<String, String> fields = Map.of("codigoExterno", "Já existe empreendimento com este código externo.");
+            return buildError(HttpStatus.CONFLICT, "Código externo já cadastrado. Use outro código ou deixe em branco.", "CONFLICT_CODIGO_EXTERNO", fields, request);
+        }
+        if (causeLower.contains("idx_emp_slug") || causeLower.contains("(slug)")) {
+            return buildError(HttpStatus.CONFLICT, "Já existe empreendimento com nome similar (slug duplicado).", "CONFLICT_SLUG", Map.of("nome", "Nome gera slug já existente."), request);
+        }
         return buildError(HttpStatus.CONFLICT, "Conflito de dados. Registro já existe ou viola regra de negócio.", "CONFLICT", null, request);
     }
 

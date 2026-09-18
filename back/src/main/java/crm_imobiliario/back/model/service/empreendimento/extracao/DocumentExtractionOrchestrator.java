@@ -3,7 +3,9 @@ package crm_imobiliario.back.model.service.empreendimento.extracao;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.text.Normalizer;
 import java.util.*;
+import java.util.regex.Pattern;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -41,6 +43,20 @@ public class DocumentExtractionOrchestrator implements EmpreendimentoExtractionS
     private static final Set<String> EXT_PDF = Set.of("pdf");
     private static final Set<String> EXT_PLANILHA = Set.of("xlsx", "xls", "csv");
     private static final Set<String> EXT_WORD = Set.of("doc", "docx");
+
+    // Classificação de "documento tipo Book" (§2 do spec de correção de endereço): o sistema não tem
+    // uma categoria de documento cadastrada, então usa o nome do arquivo como sinal — convenção real já
+    // usada pela equipe (ex.: "C-PRD - Book - London Plaza (Digital).pdf" vs.
+    // "LONDON_PLAZA_2609_Tabela_de_precos_London_Plaza_set_26.pdf"). Aplicado só a PDFs: books de tabela
+    // de preços (sem "book" no nome) e planilhas/Word não entram nessa regra.
+    private static final Pattern NOME_BOOK = Pattern.compile("(?i)\\bbook\\b");
+
+    private boolean isBook(EmpreendimentoDocumento doc) {
+        String nome = doc.getNomeOriginal();
+        if (nome == null) return false;
+        String semAcento = Normalizer.normalize(nome, Normalizer.Form.NFD).replaceAll("\\p{M}", "");
+        return NOME_BOOK.matcher(semAcento).find();
+    }
 
     @Override
     public ExtractionResult extract(List<EmpreendimentoDocumento> documentos) {
@@ -143,13 +159,31 @@ public class DocumentExtractionOrchestrator implements EmpreendimentoExtractionS
         }
         // texto livre é processado página a página (não como um único bloco) para preservar de qual
         // página cada campo veio (§5/§15 do spec) — livros comerciais reais espalham cada informação
-        // (endereço, diferenciais, lazer) numa página diferente.
-        if (extraido.tabelas.isEmpty()) {
-            for (int i = 0; i < extraido.textoPorPagina.size(); i++) {
-                String textoDaPagina = extraido.textoPorPagina.get(i);
-                if (textoDaPagina == null || textoDaPagina.isBlank()) continue;
-                memorialTextExtractor.extrair(textoDaPagina, doc, i + 1, camposGerais, alertas);
-            }
+        // (endereço, diferenciais, lazer) numa página diferente. Roda em toda página que NÃO tenha uma
+        // tabela estruturada — antes só rodava quando o documento inteiro não tinha nenhuma tabela em
+        // lugar nenhum, o que apagaria silenciosamente todo o endereço/nome/diferenciais de um Book real
+        // que por acaso tivesse uma tabela de unidades embutida em alguma página.
+        java.util.Set<Integer> paginasComTabela = extraido.tabelas.stream()
+                .map(t -> t.pagina)
+                .filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.toSet());
+        int totalPaginas = extraido.textoPorPagina.size();
+        boolean isBook = isBook(doc);
+        if (isBook) {
+            log.info("Documento \"{}\" classificado como Book. Total de páginas: {}. Página {} ignorada para "
+                            + "extração do endereço institucional do empreendimento. Páginas elegíveis para endereço: 1 a {}.",
+                    doc.getNomeOriginal(), totalPaginas, totalPaginas, Math.max(0, totalPaginas - 1));
+        }
+        for (int i = 0; i < totalPaginas; i++) {
+            int paginaAtual = i + 1;
+            if (paginasComTabela.contains(paginaAtual)) continue;
+            String textoDaPagina = extraido.textoPorPagina.get(i);
+            if (textoDaPagina == null || textoDaPagina.isBlank()) continue;
+            // regra do spec de correção de endereço (§1/§3): para Books, a última página nunca é
+            // fonte do endereço do empreendimento — só traz o endereço institucional/comercial da
+            // Pride. Se o Book tiver uma única página, ela também é a última e fica igualmente fora.
+            boolean elegivelParaEndereco = !isBook || paginaAtual < totalPaginas;
+            memorialTextExtractor.extrair(textoDaPagina, doc, paginaAtual, elegivelParaEndereco, camposGerais, alertas);
         }
     }
 

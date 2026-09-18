@@ -111,7 +111,19 @@ public class EmpreendimentoIaService {
         antes.put("bairro", emp.getBairro());
         antes.put("cep", emp.getCep());
         emp.setNome(dto.getNome());
-        emp.setCodigoExterno(dto.getCodigoExterno());
+        String codigoExternoNorm = dto.getCodigoExterno();
+        if (codigoExternoNorm != null) {
+            codigoExternoNorm = codigoExternoNorm.trim();
+            if (codigoExternoNorm.isEmpty()) codigoExternoNorm = null;
+        }
+        // valida duplicidade apenas quando preenchido
+        if (codigoExternoNorm != null) {
+            Optional<Empreendimento> existente = empreendimentoRepository.findByCodigoExterno(codigoExternoNorm);
+            if (existente.isPresent() && !existente.get().getId().equals(emp.getId())) {
+                throw new org.springframework.dao.DataIntegrityViolationException("Código externo já cadastrado: " + codigoExternoNorm);
+            }
+        }
+        emp.setCodigoExterno(codigoExternoNorm);
         emp.setStatus(dto.getStatus());
         emp.setDescricaoCurta(dto.getDescricaoCurta());
         emp.setDescricaoCompleta(dto.getDescricaoCompleta());
@@ -121,6 +133,7 @@ public class EmpreendimentoIaService {
         emp.setNumero(dto.getNumero());
         emp.setComplemento(dto.getComplemento());
         emp.setBairro(dto.getBairro());
+        emp.setRegiao(dto.getRegiao());
         emp.setCidade(dto.getCidade());
         emp.setUf(dto.getUf());
         emp.setCep(dto.getCep());
@@ -479,7 +492,7 @@ public class EmpreendimentoIaService {
             .id(e.getId()).nome(e.getNome()).slug(e.getSlug()).codigoExterno(e.getCodigoExterno()).codigoCrm(e.getCodigoCrm())
             .status(e.getStatus()).ativo(e.getAtivo()).descricaoCurta(e.getDescricaoCurta()).descricaoCompleta(e.getDescricaoCompleta())
             .incorporadora(e.getIncorporadora()).construtora(e.getConstrutora())
-            .endereco(e.getEndereco()).numero(e.getNumero()).complemento(e.getComplemento()).bairro(e.getBairro()).cidade(e.getCidade()).uf(e.getUf()).cep(e.getCep())
+            .endereco(e.getEndereco()).numero(e.getNumero()).complemento(e.getComplemento()).bairro(e.getBairro()).regiao(e.getRegiao()).cidade(e.getCidade()).uf(e.getUf()).cep(e.getCep())
             .lat(e.getLat()).lng(e.getLng()).imagemUrl(e.getImagemUrl()).dataCadastro(e.getDataCadastro()).dataAtualizacao(e.getDataAtualizacao())
             .caracteristica(carDto).precos(precos).precoAtual(precos.isEmpty()?null:precos.get(0)).condicao(condDto)
             .plantas(plantas).areasComuns(areas).diferenciais(difs).pontosReferencia(pontos).imagens(imagens).documentos(docs)

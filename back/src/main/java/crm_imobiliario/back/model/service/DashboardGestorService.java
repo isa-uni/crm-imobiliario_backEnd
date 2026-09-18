@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 import crm_imobiliario.back.model.dto.DashboardGestorDTO;
 import crm_imobiliario.back.model.entity.Lead;
 import crm_imobiliario.back.model.entity.Meta;
+import crm_imobiliario.back.model.entity.OrigemMeta;
 import crm_imobiliario.back.model.entity.Tramitacao;
 import crm_imobiliario.back.model.entity.Usuario;
 import crm_imobiliario.back.model.repository.LeadRepository;
@@ -53,7 +54,7 @@ public class DashboardGestorService {
     );
 
     public DashboardGestorDTO getDashboard(String email, LocalDateTime inicio, LocalDateTime fim,
-                                           Long corretorId, String origem, String status, Long imovelId) {
+                                           Long corretorId, String origem, String status, Long empreendimentoId) {
         Usuario solicitante = usuarioService.buscarPorEmail(email);
         String papel = solicitante.getPapel() != null ? solicitante.getPapel().getPapel() : "";
 
@@ -71,7 +72,7 @@ public class DashboardGestorService {
                 .filter(l -> corretorId == null || isLeadDoCorretor(l, corretorId))
                 .filter(l -> origem == null || origem.isBlank() || origem.equals(l.getOrigem()))
                 .filter(l -> status == null || status.isBlank() || status.equals(l.getStatus()))
-                .filter(l -> imovelId == null || (l.getImovel() != null && imovelId.equals(l.getImovel().getId())))
+                .filter(l -> empreendimentoId == null || (l.getEmpreendimento() != null && empreendimentoId.equals(l.getEmpreendimento().getId())))
                 .collect(Collectors.toList());
 
         // período anterior para comparação (mesmo tamanho de janela)
@@ -92,7 +93,7 @@ public class DashboardGestorService {
         dto.setTempoMedio(calcularTempoMedio(filtrados));
         dto.setOrigens(calcularOrigens(filtrados));
         dto.setHistorico(calcularHistorico(filtrados, inicio, fim));
-        dto.setImoveisMaisProcurados(calcularImoveis(filtrados));
+        dto.setEmpreendimentosMaisProcurados(calcularEmpreendimentos(filtrados));
         dto.setAlertas(calcularAlertas(dto.getRankingCorretores(), dto.getMetas()));
 
         return dto;
@@ -293,12 +294,16 @@ public class DashboardGestorService {
         YearMonth ym = YearMonth.from(inicio);
         LocalDate mesRef = ym.atDay(1);
 
-        List<Meta> metas = new ArrayList<>();
+        Map<Long, List<Meta>> metasPorUsuario = new HashMap<>();
+        Map<Long, Meta> metaEfetivaPorUsuario = new HashMap<>();
         for (Usuario u : equipe) {
-            metaRepository.findByUsuarioIdAndMesReferencia(u.getId(), mesRef).ifPresent(metas::add);
+            List<Meta> ms = metaRepository.findByUsuarioIdAndMesReferencia(u.getId(), mesRef);
+            metasPorUsuario.put(u.getId(), ms);
+            Meta efetiva = metaEfetiva(ms);
+            if (efetiva != null) metaEfetivaPorUsuario.put(u.getId(), efetiva);
         }
 
-        int metaContratosTotal = metas.stream().mapToInt(m -> m.getMetaContratos() != null ? m.getMetaContratos() : 0).sum();
+        int metaContratosTotal = metaEfetivaPorUsuario.values().stream().mapToInt(m -> m.getMetaContratos() != null ? m.getMetaContratos() : 0).sum();
 
         long realizadoContratos = leadsPeriodo.stream().filter(l -> "contrato".equals(l.getStatus())).count();
 
@@ -306,7 +311,7 @@ public class DashboardGestorService {
 
         List<DashboardGestorDTO.MetaCorretorDTO> porCorretor = new ArrayList<>();
         for (Usuario u : equipe) {
-            Meta m = metaRepository.findByUsuarioIdAndMesReferencia(u.getId(), mesRef).orElse(null);
+            Meta m = metaEfetivaPorUsuario.get(u.getId());
             // filtra leads do corretor
             List<Lead> meus = leadsPeriodo.stream().filter(l -> {
                 if (l.getCorretor()!=null) return u.getId().equals(l.getCorretor().getId());
@@ -315,6 +320,11 @@ public class DashboardGestorService {
             }).toList();
             long rc = meus.stream().filter(l->"contrato".equals(l.getStatus())).count();
             Integer mc = m != null ? m.getMetaContratos() : null;
+            List<Meta> ms = metasPorUsuario.get(u.getId());
+            Integer metaGestor = ms.stream().filter(x -> x.getOrigem() == OrigemMeta.GESTOR)
+                    .map(Meta::getMetaContratos).findFirst().orElse(null);
+            Integer metaPropria = ms.stream().filter(x -> x.getOrigem() == OrigemMeta.CORRETOR)
+                    .map(Meta::getMetaContratos).findFirst().orElse(null);
             double pc = (mc != null && mc > 0) ? (double) rc / mc * 100 : 0;
             String st = "sem_meta";
             if (m == null) st = "sem_meta";
@@ -326,6 +336,8 @@ public class DashboardGestorService {
             porCorretor.add(DashboardGestorDTO.MetaCorretorDTO.builder()
                     .corretorId(u.getId()).nome(u.getNome())
                     .metaContratos(mc)
+                    .metaGestor(metaGestor)
+                    .metaPropria(metaPropria)
                     .realizadoContratos(rc)
                     .percentualContratos(pc).status(st).build());
         }
@@ -337,6 +349,12 @@ public class DashboardGestorService {
                 .faltanteContratos(Math.max(0, metaContratosTotal - realizadoContratos))
                 .porCorretor(porCorretor)
                 .build();
+    }
+
+    /** Meta própria do corretor tem prioridade sobre a meta atribuída pelo gestor. */
+    private Meta metaEfetiva(List<Meta> metas) {
+        return metas.stream().filter(m -> m.getOrigem() == OrigemMeta.CORRETOR).findFirst()
+                .orElseGet(() -> metas.stream().filter(m -> m.getOrigem() == OrigemMeta.GESTOR).findFirst().orElse(null));
     }
 
     private DashboardGestorDTO.TempoMedioDTO calcularTempoMedio(List<Lead> leads) {
@@ -445,22 +463,22 @@ public class DashboardGestorService {
         return res;
     }
 
-    private List<DashboardGestorDTO.ImovelInteresseDTO> calcularImoveis(List<Lead> leads) {
-        Map<Long, List<Lead>> porImovel = leads.stream()
-                .filter(l -> l.getImovel()!=null)
-                .collect(Collectors.groupingBy(l -> l.getImovel().getId()));
-        List<DashboardGestorDTO.ImovelInteresseDTO> res = new ArrayList<>();
-        for (Map.Entry<Long, List<Lead>> e: porImovel.entrySet()) {
+    private List<DashboardGestorDTO.EmpreendimentoInteresseDTO> calcularEmpreendimentos(List<Lead> leads) {
+        Map<Long, List<Lead>> porEmpreendimento = leads.stream()
+                .filter(l -> l.getEmpreendimento()!=null)
+                .collect(Collectors.groupingBy(l -> l.getEmpreendimento().getId()));
+        List<DashboardGestorDTO.EmpreendimentoInteresseDTO> res = new ArrayList<>();
+        for (Map.Entry<Long, List<Lead>> e: porEmpreendimento.entrySet()) {
             List<Lead> lista = e.getValue();
             long interessados = lista.size();
             long propostas = lista.stream().filter(l-> List.of("pasta","aprovado","contrato").contains(l.getStatus())).count();
             long negocios = lista.stream().filter(l->"contrato".equals(l.getStatus())).count();
             double conv = interessados>0 ? (double)negocios/interessados*100:0;
-            String titulo = lista.get(0).getImovel().getTitulo();
-            res.add(DashboardGestorDTO.ImovelInteresseDTO.builder()
-                    .imovelId(e.getKey()).titulo(titulo).interessados(interessados).propostas(propostas).negocios(negocios).conversao(conv).build());
+            String nome = lista.get(0).getEmpreendimento().getNome();
+            res.add(DashboardGestorDTO.EmpreendimentoInteresseDTO.builder()
+                    .empreendimentoId(e.getKey()).nome(nome).interessados(interessados).propostas(propostas).negocios(negocios).conversao(conv).build());
         }
-        res.sort(Comparator.comparingLong(DashboardGestorDTO.ImovelInteresseDTO::getInteressados).reversed());
+        res.sort(Comparator.comparingLong(DashboardGestorDTO.EmpreendimentoInteresseDTO::getInteressados).reversed());
         return res.stream().limit(10).toList();
     }
 

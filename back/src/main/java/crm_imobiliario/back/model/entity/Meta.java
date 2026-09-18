@@ -5,6 +5,8 @@ import java.time.LocalDateTime;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -25,7 +27,7 @@ import lombok.Setter;
 @Setter
 @Entity(name = "meta")
 @Table(name = "meta", uniqueConstraints = {
-        @UniqueConstraint(columnNames = {"usuario_id", "mesReferencia"})
+        @UniqueConstraint(columnNames = {"usuario_id", "mesReferencia", "origem"})
 })
 public class Meta {
     @Id
@@ -41,6 +43,10 @@ public class Meta {
 
     @Column(nullable = false)
     private Integer metaContratos;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private OrigemMeta origem; // CORRETOR = definida pelo próprio corretor; GESTOR = atribuída pelo gestor
 
     @Column(updatable = false)
     private LocalDateTime dataCriacao;

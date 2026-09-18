@@ -22,6 +22,7 @@ public class EmpreendimentoDetalheDTO {
     private String numero;
     private String complemento;
     private String bairro;
+    private String regiao;
     private String cidade;
     private String uf;
     private String cep;

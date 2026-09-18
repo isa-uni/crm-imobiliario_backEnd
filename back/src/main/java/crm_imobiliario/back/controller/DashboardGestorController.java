@@ -21,6 +21,7 @@ import crm_imobiliario.back.model.dto.MetaCreateDTO;
 import crm_imobiliario.back.model.dto.MetaDTO;
 import crm_imobiliario.back.model.dto.UsuarioResponse;
 import crm_imobiliario.back.model.entity.Meta;
+import crm_imobiliario.back.model.entity.OrigemMeta;
 import crm_imobiliario.back.model.entity.Usuario;
 import crm_imobiliario.back.model.repository.MetaRepository;
 import crm_imobiliario.back.model.repository.UsuarioRepository;
@@ -49,7 +50,7 @@ public class DashboardGestorController {
             @RequestParam(required = false) Long corretorId,
             @RequestParam(required = false) String origem,
             @RequestParam(required = false) String status,
-            @RequestParam(required = false) Long imovelId
+            @RequestParam(required = false) Long empreendimentoId
     ) {
         String email = auth.getName();
         LocalDateTime ini;
@@ -63,7 +64,7 @@ public class DashboardGestorController {
             ini = now.withDayOfMonth(1).atStartOfDay();
             fi = now.withDayOfMonth(now.lengthOfMonth()).atTime(LocalTime.MAX);
         }
-        DashboardGestorDTO dto = dashboardService.getDashboard(email, ini, fi, corretorId, origem, status, imovelId);
+        DashboardGestorDTO dto = dashboardService.getDashboard(email, ini, fi, corretorId, origem, status, empreendimentoId);
         return ResponseEntity.ok(dto);
     }
 
@@ -89,7 +90,8 @@ public class DashboardGestorController {
 
     @PostMapping("/metas")
     public ResponseEntity<?> criarOuAtualizarMeta(@RequestBody @Valid MetaCreateDTO dto) {
-        MetaDTO salvo = metaService.criarOuAtualizar(dto);
+        // meta cadastrada pelo gestor no dashboard da equipe = sempre origem GESTOR
+        MetaDTO salvo = metaService.criarOuAtualizar(dto, OrigemMeta.GESTOR);
         return ResponseEntity.ok(salvo);
     }
 }

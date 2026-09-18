@@ -24,8 +24,8 @@ public record LeadListaDTO(
         Long equipeId,
         String equipeNome,
         String statusAtribuicao,
-        Long imovelId,
-        String imovelTitulo
+        Long empreendimentoId,
+        String empreendimentoNome
 ) {
     public static LeadListaDTO from(Lead l) {
         return new LeadListaDTO(
@@ -48,8 +48,8 @@ public record LeadListaDTO(
                 l.getEquipe() != null ? l.getEquipe().getId() : null,
                 l.getEquipe() != null ? l.getEquipe().getNome() : null,
                 l.getStatusAtribuicao(),
-                l.getImovel() != null ? l.getImovel().getId() : null,
-                l.getImovel() != null ? l.getImovel().getTitulo() : null
+                l.getEmpreendimento() != null ? l.getEmpreendimento().getId() : null,
+                l.getEmpreendimento() != null ? l.getEmpreendimento().getNome() : null
         );
     }
 }

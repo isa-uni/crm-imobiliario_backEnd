@@ -20,12 +20,12 @@ import crm_imobiliario.back.model.dto.LeadAtualizacaoDTO;
 import crm_imobiliario.back.model.dto.LeadListaDTO;
 import crm_imobiliario.back.model.dto.LeadsDTO;
 import crm_imobiliario.back.model.dto.MetricsDTO;
+import crm_imobiliario.back.model.entity.Empreendimento;
 import crm_imobiliario.back.model.entity.Equipe;
-import crm_imobiliario.back.model.entity.Imovel;
 import crm_imobiliario.back.model.entity.Lead;
 import crm_imobiliario.back.model.entity.Tramitacao;
 import crm_imobiliario.back.model.entity.Usuario;
-import crm_imobiliario.back.model.repository.ImovelRepository;
+import crm_imobiliario.back.model.repository.EmpreendimentoRepository;
 import crm_imobiliario.back.model.repository.LeadRepository;
 import crm_imobiliario.back.model.repository.TramitacaoRepository;
 import jakarta.persistence.criteria.JoinType;
@@ -38,7 +38,7 @@ public class LeadsService {
     private LeadRepository leadRepository;
 
     @Autowired
-    private ImovelRepository imovelRepository;
+    private EmpreendimentoRepository empreendimentoRepository;
 
     @Autowired
     private TramitacaoRepository tramitacaoRepository;
@@ -74,13 +74,13 @@ public class LeadsService {
             equipeRepository.findByNome("Equipe Geral").ifPresent(lead::setEquipe);
         }
         
-        if (dto.getImovelId() != null) {
-            Imovel imovel = imovelRepository.findById(dto.getImovelId())
-                    .orElseThrow(() -> new RuntimeException("Imóvel não encontrado"));
+        if (dto.getEmpreendimentoId() != null) {
+            Empreendimento empreendimento = empreendimentoRepository.findById(dto.getEmpreendimentoId())
+                    .orElseThrow(() -> new RuntimeException("Empreendimento não encontrado"));
 
-            lead.setImovel(imovel);
+            lead.setEmpreendimento(empreendimento);
         } else {
-            lead.setImovel(null);
+            lead.setEmpreendimento(null);
         }
 
         try {
@@ -160,14 +160,15 @@ public class LeadsService {
             lead.setMotivoDescarte(dto.getMotivoDescarte());
         }
 
-        if (dto.getImovelId() != null) {
-            Imovel imovel = imovelRepository.findById(dto.getImovelId())
-                .orElseThrow(() -> new RuntimeException("Imóvel não encontrado"));
+        if (dto.getEmpreendimentoId() != null) {
+            Empreendimento empreendimento = empreendimentoRepository.findById(dto.getEmpreendimentoId())
+                .orElseThrow(() -> new RuntimeException("Empreendimento não encontrado"));
 
-            lead.setImovel(imovel);
-        }  else {
-            lead.setImovel(null); // <- remove o vínculo
+            lead.setEmpreendimento(empreendimento);
+        } else if (Boolean.TRUE.equals(dto.getLimparEmpreendimento())) {
+            lead.setEmpreendimento(null); // <- remove o vínculo, só quando pedido explicitamente
         }
+        // nenhum dos dois: atualização parcial (ex.: só mudança de status) não deve mexer no vínculo atual
 
         Lead atualizado = leadRepository.save(lead);
 

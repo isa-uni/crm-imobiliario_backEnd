@@ -61,7 +61,7 @@ public class Lead {
     private String statusAtribuicao = "ATRIBUIDO";
 
     @ManyToOne
-    @JoinColumn(name = "imovel_id")
-    private Imovel imovel;
+    @JoinColumn(name = "empreendimento_id")
+    private Empreendimento empreendimento;
 
 }
