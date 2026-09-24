@@ -24,6 +24,7 @@ import crm_imobiliario.back.model.dto.LeadsDTO;
 import crm_imobiliario.back.model.dto.MetricsDTO;
 import crm_imobiliario.back.model.dto.TramitacaoDTO;
 import crm_imobiliario.back.model.entity.Tramitacao;
+import crm_imobiliario.back.model.service.LeadExportService;
 import crm_imobiliario.back.model.service.LeadsService;
 import crm_imobiliario.back.util.DefaultResponse;
 import jakarta.validation.Valid;
@@ -34,6 +35,9 @@ public class LeadController {
 
     @Autowired
     private LeadsService leadService;
+
+    @Autowired
+    private LeadExportService leadExportService;
 
     @GetMapping
     public ResponseEntity<?> getlead(
@@ -106,6 +110,28 @@ public class LeadController {
     @GetMapping("/metrics")
     public ResponseEntity<MetricsDTO> getMetrics(org.springframework.security.core.Authentication authentication) {
         return ResponseEntity.ok(leadService.getMetrics());
+    }
+
+    /**
+     * Exporta os leads do usuário logado (respeitando os mesmos filtros da listagem) em Excel,
+     * com abas de funil de vendas, origem e histórico dos leads.
+     */
+    @GetMapping("/exportar")
+    public ResponseEntity<byte[]> exportarExcel(
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String month,
+            @RequestParam(required = false) String origem,
+            @RequestParam(required = false) String historico,
+            org.springframework.security.core.Authentication authentication) {
+        byte[] arquivo = leadExportService.exportarExcel(search, status, month, origem, historico);
+        String filename = "leads_" + java.time.LocalDate.now() + ".xlsx";
+        return ResponseEntity.ok()
+                .contentType(org.springframework.http.MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .header(org.springframework.http.HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"" + filename + "\"")
+                .body(arquivo);
     }
 
     @GetMapping("/{id}/tramitacoes")

@@ -314,6 +314,33 @@ public class LeadsService {
         };
     }
 
+    private Specification<Lead> specOrigem(String origem) {
+        return (root, query, cb) -> {
+            if (origem == null || origem.isBlank() || "all".equalsIgnoreCase(origem)) return cb.conjunction();
+            return cb.equal(root.get("origem"), origem);
+        };
+    }
+
+    private Specification<Lead> specHistorico(String historico) {
+        return (root, query, cb) -> {
+            if (historico == null || historico.isBlank() || "all".equalsIgnoreCase(historico)) return cb.conjunction();
+            return cb.equal(root.get("historico"), historico);
+        };
+    }
+
+    /** Todos os leads que batem com o filtro (sem paginação) — usado pela exportação, que precisa do conjunto completo, não só de uma página. */
+    public List<Lead> findAllForExport(String search, String status, String month, String origem, String historico) {
+        Usuario solicitante = usuarioLogado();
+        if (solicitante == null) throw new AccessDeniedException("Não autenticado");
+        Specification<Lead> spec = Specification.where(specEscopo(solicitante))
+                .and(specSearch(search))
+                .and(specStatus(status))
+                .and(specMonth(month))
+                .and(specOrigem(origem))
+                .and(specHistorico(historico));
+        return leadRepository.findAll(spec, Sort.by(Sort.Direction.DESC, "dataAtualizacao"));
+    }
+
     public void inativarLead(Long id) {
         Lead lead = leadRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Lead não encontrado"));
