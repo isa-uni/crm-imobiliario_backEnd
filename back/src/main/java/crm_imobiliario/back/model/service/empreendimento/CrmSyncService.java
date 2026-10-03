@@ -1,6 +1,5 @@
 package crm_imobiliario.back.model.service.empreendimento;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Instant;
@@ -8,8 +7,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.springframework.core.task.TaskExecutor;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
@@ -18,7 +15,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import crm_imobiliario.back.config.CrmProperties;
 import crm_imobiliario.back.model.entity.Empreendimento;
 import crm_imobiliario.back.model.entity.Sincronizacao;
-import crm_imobiliario.back.model.repository.EmpreendimentoRepository;
 import crm_imobiliario.back.model.repository.SincronizacaoRepository;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
@@ -36,7 +32,6 @@ import lombok.extern.slf4j.Slf4j;
 public class CrmSyncService {
 
     private final CrmProperties crmProperties;
-    private final EmpreendimentoRepository empreendimentoRepository;
     private final SincronizacaoRepository sincronizacaoRepository;
     private final EmpreendimentoService empreendimentoService;
     private final GuiaParserService guiaParserService;

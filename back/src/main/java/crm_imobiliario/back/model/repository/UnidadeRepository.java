@@ -12,9 +12,4 @@ public interface UnidadeRepository extends JpaRepository<Unidade, Long> {
 
     List<Unidade> findByEmpreendimentoId(Long empreendimentoId);
 
-    List<Unidade> findByEmpreendimentoIdAndSituacao(Long empreendimentoId, String situacao);
-
-    void deleteByEmpreendimentoId(Long empreendimentoId);
-
-    long countByEmpreendimentoIdAndSituacao(Long empreendimentoId, String situacao);
 }

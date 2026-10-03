@@ -7,5 +7,4 @@ import crm_imobiliario.back.model.entity.EmpreendimentoExtracaoDocumentoId;
 
 public interface EmpreendimentoExtracaoDocumentoRepository extends JpaRepository<EmpreendimentoExtracaoDocumento, EmpreendimentoExtracaoDocumentoId> {
     List<EmpreendimentoExtracaoDocumento> findByExtracaoId(Long extracaoId);
-    List<EmpreendimentoExtracaoDocumento> findByDocumentoId(Long documentoId);
 }

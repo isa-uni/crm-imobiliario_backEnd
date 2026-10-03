@@ -20,7 +20,6 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import crm_imobiliario.back.model.entity.Lead;
-import crm_imobiliario.back.model.entity.Usuario;
 
 /**
  * Gera o workbook de verdade (POI real) e lê os bytes de volta, no mesmo estilo já usado para

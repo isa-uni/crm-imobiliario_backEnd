@@ -1,6 +1,5 @@
 package crm_imobiliario.back.model.service;
 
-import java.time.Instant;
 import java.util.Date;
 import java.util.UUID;
 
@@ -68,16 +67,6 @@ public class TokenService {
                 .compact();
     }
 
-    public String gerarTokenLegacy(org.springframework.security.core.userdetails.UserDetails usuario) {
-        // mantido para compatibilidade se necessário
-        return Jwts.builder()
-                .setSubject(usuario.getUsername())
-                .setIssuedAt(new Date())
-                .setExpiration(new Date(System.currentTimeMillis() + accessExpiration))
-                .signWith(Keys.hmacShaKeyFor(secret.getBytes()), SignatureAlgorithm.HS256)
-                .compact();
-    }
-
     public Claims parseClaims(String token) {
         try {
             return Jwts.parserBuilder()
@@ -88,16 +77,6 @@ public class TokenService {
         } catch (Exception e) {
             return null;
         }
-    }
-
-    public String validarToken(String token) {
-        Claims c = parseClaims(token);
-        if (c == null) return null;
-        if (!"access".equals(c.get("type", String.class))) {
-            // aceita tokens antigos sem type para retrocompat
-            if (c.get("type") != null) return null;
-        }
-        return c.getSubject();
     }
 
     public String validarRefreshToken(String token) {

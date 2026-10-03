@@ -106,25 +106,6 @@ public class UsuarioService {
                 .orElseThrow(() -> new RuntimeException(
                         "Cliente com id " + id + " não encontrado"
                 ));
-        // bloqueia delete físico se tem histórico (lead ou notificacao)
-        try {
-            if (leadAtribuicaoService != null) {
-                // verifica se usuário tem histórico ou leads vinculados
-                // contagem simples via repositories seria ideal, mas evita circular; usa checagem via equipe
-            }
-            // se tem leads onde é corretor, bloqueia
-            // fazemos verificação direta via repository injetado lazy
-            // por simplicidade, impede delete de usuários com papel corretor/gestor que já tiveram leads
-            // a verificação real está em LeadRepository, mas para não quebrar, apenas avisa
-            // implementação completa exigiria LeadRepository, mas vamos bloquear genericamente se ativo=false já foi desligado
-            // permite delete apenas de usuários sem histórico: verifica se existe Lead com corretor = usuario
-            // injetamos via lookup se necessário
-        } catch (Exception ignored) {}
-        // regra: se tem histórico, não permite delete físico
-        // como não temos acesso direto a histórico aqui sem circular, verificamos via flag ativo false => histórico provável
-        // mantemos compat: lança exceção se tentar deletar usuário com histórico
-        // para não quebrar testes, apenas loga e permite se for admin e sem leads
-        // verificação real será feita no controller via exceção
         usuarioRepository.delete(usuario);
     }
     
@@ -179,13 +160,6 @@ public class UsuarioService {
             return false;
         }
     }
-
-    // public String normalizarCpf(String valor) {
-    //     if (valor == null || valor.isBlank()) {
-    //         return null;
-    //     }
-    //     return valor.replaceAll("\\D", "");
-    // }
 
     public Usuario atualizarUsuario(Long id, UsuarioDTO dto) {
         Usuario usuario = usuarioRepository.findById(id)

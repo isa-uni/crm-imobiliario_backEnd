@@ -12,7 +12,6 @@ import org.springframework.test.context.TestPropertySource;
 import org.springframework.data.domain.PageRequest;
 
 import crm_imobiliario.back.model.dto.empreendimento.EmpreendimentoConfirmacaoDTO;
-import crm_imobiliario.back.model.dto.empreendimento.EmpreendimentoDetalheDTO;
 import crm_imobiliario.back.model.dto.empreendimento.UnidadeDTO;
 import crm_imobiliario.back.model.entity.Empreendimento;
 import crm_imobiliario.back.model.entity.Unidade;

@@ -148,11 +148,6 @@ public class RateLimitFilter extends OncePerRequestFilter {
         return m + " min " + s + "s";
     }
 
-    public void resetForTest(String key) {
-        bucketsByComposite.remove(key);
-        bucketsByIp.remove(key);
-    }
-
     // compatibilidade: chamado antigo com apenas ip – remove ambos prefixados
     public void recordSuccess(String ip) {
         bucketsByIp.remove(ip);
@@ -167,35 +162,6 @@ public class RateLimitFilter extends OncePerRequestFilter {
         } else {
             recordSuccess(ip);
         }
-    }
-
-    private String extractEmail(HttpServletRequest request) {
-        try {
-            ContentCachingRequestWrapper wrapper = request instanceof ContentCachingRequestWrapper
-                    ? (ContentCachingRequestWrapper) request
-                    : null;
-            byte[] body = null;
-            if (wrapper != null) {
-                try { wrapper.getInputStream().readAllBytes(); } catch (Exception ignored) {}
-                body = wrapper.getContentAsByteArray();
-                if (body == null || body.length == 0) {
-                    String s = new String(wrapper.getContentAsByteArray(), StandardCharsets.UTF_8);
-                    if (s.isBlank()) return "";
-                }
-            } else {
-                return "";
-            }
-            if (body == null || body.length == 0) return "";
-            String json = new String(body, StandardCharsets.UTF_8);
-            try {
-                com.fasterxml.jackson.databind.JsonNode node = mapper.readTree(json);
-                if (node.has("email") && !node.get("email").isNull()) return node.get("email").asText().trim();
-                if (node.has("username") && !node.get("username").isNull()) return node.get("username").asText().trim();
-            } catch (Exception ignored) {}
-            java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"email\"\\s*:\\s*\"([^\"]+)\"").matcher(json);
-            if (m.find()) return m.group(1).trim();
-        } catch (Exception ignored) {}
-        return "";
     }
 
     private String extractEmailFromWrapper(ContentCachingRequestWrapper wrapper) {

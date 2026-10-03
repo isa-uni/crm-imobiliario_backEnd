@@ -10,8 +10,6 @@ import org.springframework.core.MethodParameter;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import crm_imobiliario.back.model.dto.UsuarioDTO;
-import jakarta.validation.Validation;
-import jakarta.validation.Validator;
 
 public class GlobalExceptionHandlerTest {
 

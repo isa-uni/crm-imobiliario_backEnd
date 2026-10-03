@@ -82,7 +82,4 @@ public class EmpreendimentoStorageService {
         } catch (Exception e) { throw new RuntimeException("Erro hash", e); }
     }
 
-    public byte[] lerArquivo(EmpreendimentoDocumento doc) throws IOException {
-        return Files.readAllBytes(Paths.get(doc.getCaminho()));
-    }
 }

@@ -4,6 +4,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -24,7 +26,6 @@ import crm_imobiliario.back.model.entity.Meta;
 import crm_imobiliario.back.model.entity.OrigemMeta;
 import crm_imobiliario.back.model.entity.Usuario;
 import crm_imobiliario.back.model.repository.MetaRepository;
-import crm_imobiliario.back.model.repository.UsuarioRepository;
 import crm_imobiliario.back.model.service.DashboardGestorService;
 import crm_imobiliario.back.model.service.MetaService;
 import jakarta.validation.Valid;
@@ -37,8 +38,6 @@ public class DashboardGestorController {
     private DashboardGestorService dashboardService;
     @Autowired
     private MetaRepository metaRepository;
-    @Autowired
-    private UsuarioRepository usuarioRepository;
     @Autowired
     private MetaService metaService;
 
@@ -81,9 +80,9 @@ public class DashboardGestorController {
         // mesReferencia esperado como yyyy-MM-01
         LocalDate ref = mesReferencia.withDayOfMonth(1);
         List<Usuario> equipe = dashboardService.getEquipeCorretores(auth.getName());
-        List<Long> ids = equipe.stream().map(Usuario::getId).toList();
-        List<Meta> metas = metaRepository.findAll().stream()
-                .filter(m -> ids.contains(m.getUsuario().getId()) && m.getMesReferencia().equals(ref))
+        Set<Long> ids = equipe.stream().map(Usuario::getId).collect(Collectors.toSet());
+        List<Meta> metas = metaRepository.findByMesReferencia(ref).stream()
+                .filter(m -> ids.contains(m.getUsuario().getId()))
                 .toList();
         return ResponseEntity.ok(metas.stream().map(MetaDTO::from).toList());
     }

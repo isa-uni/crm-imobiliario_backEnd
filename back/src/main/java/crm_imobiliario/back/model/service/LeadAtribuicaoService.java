@@ -2,8 +2,6 @@ package crm_imobiliario.back.model.service;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -53,34 +51,9 @@ public class LeadAtribuicaoService {
     }
 
     @Transactional
-    public Lead atribuirInicial(Lead lead, Usuario corretor, Usuario criador) {
-        if (corretor != null) {
-            lead.setCorretor(corretor);
-            lead.setCorretor_responsavel(corretor.getNome());
-            Equipe eq = resolverEquipeUsuario(corretor);
-            if (eq == null) eq = equipeRepository.findByNome("Equipe Geral").orElse(null);
-            lead.setEquipe(eq);
-            lead.setStatusAtribuicao("ATRIBUIDO");
-        }
-        Lead salvo = leadRepository.save(lead);
-        LeadResponsavelHistorico h = LeadResponsavelHistorico.builder()
-                .lead(salvo)
-                .corretor(corretor)
-                .equipe(salvo.getEquipe())
-                .gestor(corretor != null && corretor.getGestor() != null ? corretor.getGestor() : null)
-                .dataInicio(LocalDateTime.now())
-                .motivo("ATRIBUICAO_INICIAL")
-                .usuarioResponsavel(criador)
-                .build();
-        historicoRepository.save(h);
-        return salvo;
-    }
-
-    @Transactional
     public void desligamentoCorretor(Long corretorId, Usuario solicitante) {
         Usuario corretor = usuarioRepository.findById(corretorId).orElseThrow(() -> new RuntimeException("Corretor não encontrado"));
-        List<Lead> leads = leadRepository.findAll().stream()
-                .filter(l -> l.getCorretor() != null && l.getCorretor().getId().equals(corretorId))
+        List<Lead> leads = leadRepository.findByCorretorId(corretorId).stream()
                 .filter(l -> "ATRIBUIDO".equals(l.getStatusAtribuicao()))
                 .toList();
         for (Lead lead : leads) {
@@ -188,14 +161,14 @@ public class LeadAtribuicaoService {
         String papel = solicitante.getPapel() != null ? solicitante.getPapel().getPapel() : "";
         if ("admin".equals(papel)) {
             if (equipeId != null) {
-                return leadRepository.findAll().stream().filter(l -> "AGUARDANDO_REDISTRIBUICAO".equals(l.getStatusAtribuicao()) && l.getEquipe() != null && l.getEquipe().getId().equals(equipeId)).toList();
+                return leadRepository.findByStatusAtribuicao("AGUARDANDO_REDISTRIBUICAO").stream().filter(l -> l.getEquipe() != null && l.getEquipe().getId().equals(equipeId)).toList();
             }
-            return leadRepository.findAll().stream().filter(l -> "AGUARDANDO_REDISTRIBUICAO".equals(l.getStatusAtribuicao())).toList();
+            return leadRepository.findByStatusAtribuicao("AGUARDANDO_REDISTRIBUICAO");
         }
         if ("gestor".equals(papel)) {
             Equipe equipe = resolverEquipeUsuario(solicitante);
             if (equipe == null) return List.of();
-            return leadRepository.findAll().stream().filter(l -> "AGUARDANDO_REDISTRIBUICAO".equals(l.getStatusAtribuicao()) && l.getEquipe() != null && l.getEquipe().getId().equals(equipe.getId())).toList();
+            return leadRepository.findByStatusAtribuicao("AGUARDANDO_REDISTRIBUICAO").stream().filter(l -> l.getEquipe() != null && l.getEquipe().getId().equals(equipe.getId())).toList();
         }
         return List.of();
     }

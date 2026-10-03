@@ -31,12 +31,4 @@ public class Normalizer {
         return n.replaceAll("^-|-$", "");
     }
 
-    public boolean casa(String a, String b) {
-        if (a == null || b == null) return false;
-        String na = normalizar(a);
-        String nb = normalizar(b);
-        if (na.equals(nb)) return true;
-        // tolera "london plaza" vs "london plaza torre a" (prefix match)
-        return na.startsWith(nb) || nb.startsWith(na);
-    }
 }

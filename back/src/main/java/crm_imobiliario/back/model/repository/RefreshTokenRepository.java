@@ -12,7 +12,6 @@ import crm_imobiliario.back.model.entity.RefreshToken;
 @Repository
 public interface RefreshTokenRepository extends JpaRepository<RefreshToken, Long> {
     Optional<RefreshToken> findByJti(String jti);
-    void deleteByJti(String jti);
     List<RefreshToken> findByUsuarioId(Long usuarioId);
     void deleteByUsuarioId(Long usuarioId);
 }

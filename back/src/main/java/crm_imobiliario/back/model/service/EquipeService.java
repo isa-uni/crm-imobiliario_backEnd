@@ -79,7 +79,7 @@ public class EquipeService {
 
     @Transactional
     public void desvincularGestor(Long gestorId) {
-        List<Equipe> equipes = equipeRepository.findAll().stream().filter(e -> e.getGestor() != null && e.getGestor().getId().equals(gestorId)).toList();
+        List<Equipe> equipes = equipeRepository.findAllByGestorId(gestorId);
         for (Equipe e : equipes) {
             e.setGestor(null);
             equipeRepository.save(e);

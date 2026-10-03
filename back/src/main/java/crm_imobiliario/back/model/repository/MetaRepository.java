@@ -15,6 +15,5 @@ public interface MetaRepository extends JpaRepository<Meta, Long> {
     List<Meta> findByUsuarioIdAndMesReferencia(Long usuarioId, LocalDate mesReferencia);
     Optional<Meta> findByUsuarioIdAndMesReferenciaAndOrigem(Long usuarioId, LocalDate mesReferencia, OrigemMeta origem);
     List<Meta> findByMesReferencia(LocalDate mesReferencia);
-    List<Meta> findByUsuario_Gestor_IdAndMesReferencia(Long gestorId, LocalDate mesReferencia);
     List<Meta> findByUsuarioId(Long usuarioId);
 }

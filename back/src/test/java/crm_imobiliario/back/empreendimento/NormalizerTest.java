@@ -24,11 +24,4 @@ public class NormalizerTest {
         assertEquals("cordoba", n.slugify("CÓRDOBA RESIDENCIAL"));
     }
 
-    @Test
-    void casaTolerante() {
-        assertTrue(n.casa("LONDON PLAZA", "london plaza"));
-        assertTrue(n.casa("RESIDENCIAL LONDON PLAZA", "London Plaza"));
-        assertTrue(n.casa("London Plaza - Torre A", "London Plaza"));
-        assertFalse(n.casa("London Plaza", "London Life"));
-    }
 }

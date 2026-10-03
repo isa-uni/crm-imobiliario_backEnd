@@ -20,13 +20,11 @@ import org.springframework.web.bind.annotation.RestController;
 
 import jakarta.servlet.http.HttpServletRequest;
 
-import crm_imobiliario.back.model.dto.DadosTokenJWT;
 import crm_imobiliario.back.model.dto.NovaSenhaDTO;
 import crm_imobiliario.back.model.dto.PerfilDTO;
 import crm_imobiliario.back.model.dto.TrocarSenhaDTO;
 import crm_imobiliario.back.model.dto.UsuarioDTO;
 import crm_imobiliario.back.model.dto.UsuarioResponse;
-import crm_imobiliario.back.model.dto.UsuarioRetorno;
 import crm_imobiliario.back.model.entity.Usuario;
 import crm_imobiliario.back.model.service.TokenService;
 import crm_imobiliario.back.model.service.UsuarioService;

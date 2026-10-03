@@ -119,11 +119,4 @@ public class ImovelService {
         imovelRepository.save(imovel);
     }
 
-    public void deletarImovel(Long id){
-        Imovel imovel = imovelRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException(
-                        "Imovel com id " + id + " não encontrado"
-                ));
-        imovelRepository.delete(imovel);
-    }
 }

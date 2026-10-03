@@ -364,6 +364,7 @@ public class DashboardGestorService {
 
         // por corretor
         Map<Long, List<Long>> diasPorCorretor = new HashMap<>();
+        List<Usuario> todosUsuarios = null; // carregado uma vez, só se algum lead precisar do match por nome
         for (Lead l : contratos) {
             List<Tramitacao> trams = tramitacaoRepository.findByLeadIdOrderByDataMovimentacaoAsc(l.getId());
             LocalDateTime ini = l.getDataCriacao();
@@ -375,7 +376,8 @@ public class DashboardGestorService {
             Long corrId = l.getCorretor()!=null ? l.getCorretor().getId() : null;
             if (corrId==null && l.getCorretor_responsavel()!=null) {
                 // tenta achar id por nome
-                Usuario u = usuarioRepository.findAll().stream().filter(x->l.getCorretor_responsavel().equalsIgnoreCase(x.getNome())).findFirst().orElse(null);
+                if (todosUsuarios == null) todosUsuarios = usuarioRepository.findAll();
+                Usuario u = todosUsuarios.stream().filter(x->l.getCorretor_responsavel().equalsIgnoreCase(x.getNome())).findFirst().orElse(null);
                 if (u!=null) corrId = u.getId();
             }
             if (corrId!=null) diasPorCorretor.computeIfAbsent(corrId,k->new ArrayList<>()).add(dias);

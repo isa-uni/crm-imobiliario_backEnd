@@ -9,6 +9,4 @@ import crm_imobiliario.back.model.entity.EmpreendimentoFonte;
 public interface EmpreendimentoFonteRepository extends JpaRepository<EmpreendimentoFonte, Long> {
     List<EmpreendimentoFonte> findByExtracaoId(Long extracaoId);
     List<EmpreendimentoFonte> findByEmpreendimentoId(Long empreendimentoId);
-    List<EmpreendimentoFonte> findByCampo(String campo);
-    List<EmpreendimentoFonte> findByExtracaoIdAndCampo(Long extracaoId, String campo);
 }
