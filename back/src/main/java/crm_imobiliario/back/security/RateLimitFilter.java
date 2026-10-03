@@ -1,34 +1,51 @@
 package crm_imobiliario.back.security;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import crm_imobiliario.back.util.ApiErrorResponse;
-import jakarta.servlet.FilterChain;
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
-import org.springframework.web.filter.OncePerRequestFilter;
-import org.springframework.web.util.ContentCachingRequestWrapper;
-
+import java.io.ByteArrayInputStream;
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+import org.springframework.web.filter.OncePerRequestFilter;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import crm_imobiliario.back.util.ApiErrorResponse;
+import jakarta.servlet.FilterChain;
+import jakarta.servlet.ReadListener;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletInputStream;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequestWrapper;
+import jakarta.servlet.http.HttpServletResponse;
+
+/**
+ * Limite de tentativas de login (janela fixa): por IP+e-mail (protege uma conta específica) e por IP
+ * (protege contra varredura de várias contas). Ambos são verificados ANTES de autenticar.
+ *
+ * O estado fica em memória: é perdido ao reiniciar e não é compartilhado entre instâncias — para
+ * rodar mais de uma instância seria preciso um armazenamento comum (ex.: Redis/Bucket4j).
+ */
 @Component
 public class RateLimitFilter extends OncePerRequestFilter {
 
+    private static final int MAX_BODY_BYTES = 16 * 1024;
+
     private static class Bucket {
-        AtomicInteger count = new AtomicInteger(0);
-        AtomicLong windowStart = new AtomicLong(System.currentTimeMillis());
+        final AtomicInteger count = new AtomicInteger(0);
+        final AtomicLong windowStart = new AtomicLong(System.currentTimeMillis());
     }
 
     private final ConcurrentHashMap<String, Bucket> bucketsByComposite = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Bucket> bucketsByIp = new ConcurrentHashMap<>();
+    private final ObjectMapper mapper = new ObjectMapper();
 
     @Value("${app.rate-limit.login.max-attempts-per-email:5}")
     private int maxAttemptsEmail;
@@ -39,12 +56,12 @@ public class RateLimitFilter extends OncePerRequestFilter {
     @Value("${app.rate-limit.login.window-ms:300000}")
     private long windowMs;
 
-    private final ObjectMapper mapper;
-
-    public RateLimitFilter() {
-        this.mapper = new ObjectMapper();
-        this.mapper.registerModule(new JavaTimeModule());
-    }
+    /**
+     * Só confia em X-Forwarded-For quando a API está atrás de um proxy reverso que sobrescreve o
+     * header. Sem proxy, o cliente pode forjá-lo a cada tentativa e escapar do limite por IP.
+     */
+    @Value("${app.rate-limit.trust-forwarded-for:false}")
+    private boolean trustForwardedFor;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
@@ -55,89 +72,60 @@ public class RateLimitFilter extends OncePerRequestFilter {
             return;
         }
 
+        // lê o corpo uma vez (para saber o e-mail antes de autenticar) e o reapresenta ao controller
+        CachedBodyRequest cached = new CachedBodyRequest(request, request.getInputStream().readNBytes(MAX_BODY_BYTES));
         String ip = getClientIp(request);
-        long now = System.currentTimeMillis();
-        Bucket ipBucket = bucketsByIp.get(ip);
-        long retryAfterIp = 0;
-        if (ipBucket != null && now - ipBucket.windowStart.get() <= windowMs) {
-            if (ipBucket.count.get() >= maxAttemptsIp) {
-                retryAfterIp = (ipBucket.windowStart.get() + windowMs - now) / 1000 + 1;
-            }
+        String email = extrairEmail(cached.body);
+        String compositeKey = email.isBlank() ? null : ip + ":" + email.toLowerCase();
+
+        long retryEmail = compositeKey != null ? segundosBloqueado(bucketsByComposite.get(compositeKey), maxAttemptsEmail) : 0;
+        if (retryEmail > 0) {
+            sendRateLimited(response, request, "Muitas tentativas para este e-mail. Tente novamente em " + formatRetry(retryEmail) + ".", retryEmail);
+            return;
         }
-        if (retryAfterIp > 0) {
-            String msg = "Muitas tentativas deste IP. Tente novamente em " + formatRetry(retryAfterIp) + ".";
-            sendRateLimited(response, request, msg, (int) retryAfterIp);
+        long retryIp = segundosBloqueado(bucketsByIp.get(ip), maxAttemptsIp);
+        if (retryIp > 0) {
+            sendRateLimited(response, request, "Muitas tentativas deste IP. Tente novamente em " + formatRetry(retryIp) + ".", retryIp);
             return;
         }
 
-        // usa wrapper apenas para capturar body após o chain (não consome antes)
-        ContentCachingRequestWrapper wrapped = request instanceof ContentCachingRequestWrapper
-                ? (ContentCachingRequestWrapper) request
-                : new ContentCachingRequestWrapper(request, 1024 * 1024);
-
-        chain.doFilter(wrapped, response);
+        chain.doFilter(cached, response);
 
         int status = response.getStatus();
-        String email = extractEmailFromWrapper(wrapped);
-        String compositeKey = email.isBlank() ? ip : ip + ":" + email.toLowerCase();
-
-        // verifica bloqueio por e-mail após ter o e-mail (após o chain, body já está cacheado)
-        if (status != 401 && status != 400 && status != 403) {
-            // verifica se já estava bloqueado por e-mail antes de contar esta tentativa
-            Bucket compositeBucket = bucketsByComposite.get(compositeKey);
-            if (compositeBucket != null && !email.isBlank() && System.currentTimeMillis() - compositeBucket.windowStart.get() <= windowMs) {
-                if (compositeBucket.count.get() >= maxAttemptsEmail) {
-                    // já bloqueado, mas esta requisição já passou; próxima será bloqueada. Se quiser bloquear agora, poderia enviar 429 aqui, mas response já com status 200/401.
-                    // Mantém incremento apenas em falha, não bloqueia sucesso.
-                }
-            }
-        }
-
         if (status == 401 || status == 400 || status == 403) {
-            // incrementa composite e IP apenas em falha
-            if (!email.isBlank()) {
-                Bucket cb = bucketsByComposite.computeIfAbsent(compositeKey, k -> new Bucket());
-                long nowCb = System.currentTimeMillis();
-                if (nowCb - cb.windowStart.get() > windowMs) {
-                    cb.windowStart.set(nowCb);
-                    cb.count.set(0);
-                }
-                cb.count.incrementAndGet();
-                // se acabou de atingir limite, próxima tentativa será bloqueada via check acima
-            }
-            Bucket ib = bucketsByIp.computeIfAbsent(ip, k -> new Bucket());
-            long now2 = System.currentTimeMillis();
-            if (now2 - ib.windowStart.get() > windowMs) {
-                ib.windowStart.set(now2);
-                ib.count.set(0);
-            }
-            ib.count.incrementAndGet();
-        } else if (status >= 200 && status < 300) {
-            if (!email.isBlank()) {
-                bucketsByComposite.remove(compositeKey);
-            }
+            if (compositeKey != null) incrementar(bucketsByComposite, compositeKey);
+            incrementar(bucketsByIp, ip);
+        } else if (status >= 200 && status < 300 && compositeKey != null) {
+            bucketsByComposite.remove(compositeKey);
         }
     }
 
-    private void sendRateLimited(HttpServletResponse response, HttpServletRequest request, String message, int retryAfterSeconds) throws IOException {
-        response.setStatus(429);
-        response.setContentType("application/json");
-        response.setCharacterEncoding("UTF-8");
+    /** Segundos restantes de bloqueio, ou 0 se o bucket está abaixo do limite ou com a janela vencida. */
+    private long segundosBloqueado(Bucket bucket, int limite) {
+        if (bucket == null) return 0;
+        long now = System.currentTimeMillis();
+        if (now - bucket.windowStart.get() > windowMs) return 0;
+        if (bucket.count.get() < limite) return 0;
+        return (bucket.windowStart.get() + windowMs - now) / 1000 + 1;
+    }
+
+    private void incrementar(ConcurrentHashMap<String, Bucket> buckets, String chave) {
+        Bucket b = buckets.computeIfAbsent(chave, k -> new Bucket());
+        long now = System.currentTimeMillis();
+        if (now - b.windowStart.get() > windowMs) {
+            b.windowStart.set(now);
+            b.count.set(0);
+        }
+        b.count.incrementAndGet();
+    }
+
+    private void sendRateLimited(HttpServletResponse response, HttpServletRequest request, String message, long retryAfterSeconds) throws IOException {
         response.setHeader("Retry-After", String.valueOf(retryAfterSeconds));
         ApiErrorResponse err = ApiErrorResponse.builder()
                 .success(false).message(message).code("RATE_LIMITED")
+                .details(java.util.Map.of("retryAfter", retryAfterSeconds))
                 .path(request.getRequestURI()).timestamp(Instant.now()).build();
-        // adiciona retryAfter no details se o builder suportar
-        try {
-            String body = mapper.writeValueAsString(err);
-            // injeta retryAfter manualmente se o DTO não tiver campo
-            if (!body.contains("retryAfter")) {
-                body = body.replaceFirst("\\}$", ",\"retryAfter\":" + retryAfterSeconds + "}");
-            }
-            response.getWriter().write(body);
-        } catch (Exception e) {
-            response.getWriter().write("{\"success\":false,\"message\":\"" + message + "\",\"code\":\"RATE_LIMITED\",\"retryAfter\":" + retryAfterSeconds + "}");
-        }
+        JsonErrorWriter.escrever(request, response, 429, err);
     }
 
     private String formatRetry(long seconds) {
@@ -148,42 +136,55 @@ public class RateLimitFilter extends OncePerRequestFilter {
         return m + " min " + s + "s";
     }
 
-    // compatibilidade: chamado antigo com apenas ip – remove ambos prefixados
-    public void recordSuccess(String ip) {
-        bucketsByIp.remove(ip);
-        // remove todos compostos desse ip
-        bucketsByComposite.keySet().removeIf(k -> k.startsWith(ip + ":") || k.equals(ip));
-    }
-
-    public void recordSuccess(String ip, String email) {
-        if (email != null && !email.isBlank()) {
-            String compositeKey = ip + ":" + email.toLowerCase();
-            bucketsByComposite.remove(compositeKey);
-        } else {
-            recordSuccess(ip);
-        }
-    }
-
-    private String extractEmailFromWrapper(ContentCachingRequestWrapper wrapper) {
+    private String extrairEmail(byte[] body) {
+        if (body == null || body.length == 0) return "";
         try {
-            byte[] body = wrapper.getContentAsByteArray();
-            if (body == null || body.length == 0) return "";
-            String json = new String(body, StandardCharsets.UTF_8);
-            if (json.isBlank()) return "";
-            try {
-                com.fasterxml.jackson.databind.JsonNode node = mapper.readTree(json);
-                if (node.has("email") && !node.get("email").isNull()) return node.get("email").asText().trim();
-                if (node.has("username") && !node.get("username").isNull()) return node.get("username").asText().trim();
-            } catch (Exception ignored) {}
-            java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"email\"\\s*:\\s*\"([^\"]+)\"").matcher(json);
-            if (m.find()) return m.group(1).trim();
-        } catch (Exception ignored) {}
+            JsonNode node = mapper.readTree(body);
+            if (node != null && node.hasNonNull("email")) return node.get("email").asText().trim();
+        } catch (Exception ignored) {
+            // corpo inválido: o controller devolverá 400; conta só no limite por IP
+        }
         return "";
     }
 
     public String getClientIp(HttpServletRequest req) {
-        String xf = req.getHeader("X-Forwarded-For");
-        if (xf != null && !xf.isBlank()) return xf.split(",")[0].trim();
+        if (trustForwardedFor) {
+            String xf = req.getHeader("X-Forwarded-For");
+            if (xf != null && !xf.isBlank()) return xf.split(",")[0].trim();
+        }
         return req.getRemoteAddr();
+    }
+
+    /** Request cujo corpo já foi lido e pode ser relido pelo controller. */
+    private static class CachedBodyRequest extends HttpServletRequestWrapper {
+        private final byte[] body;
+
+        CachedBodyRequest(HttpServletRequest request, byte[] body) {
+            super(request);
+            this.body = body;
+        }
+
+        @Override
+        public ServletInputStream getInputStream() {
+            ByteArrayInputStream in = new ByteArrayInputStream(body);
+            return new ServletInputStream() {
+                @Override public int read() { return in.read(); }
+                @Override public int read(byte[] b, int off, int len) { return in.read(b, off, len); }
+                @Override public boolean isFinished() { return in.available() == 0; }
+                @Override public boolean isReady() { return true; }
+                @Override public void setReadListener(ReadListener listener) { throw new UnsupportedOperationException(); }
+            };
+        }
+
+        @Override
+        public BufferedReader getReader() {
+            return new BufferedReader(new InputStreamReader(getInputStream(), StandardCharsets.UTF_8));
+        }
+
+        @Override
+        public int getContentLength() { return body.length; }
+
+        @Override
+        public long getContentLengthLong() { return body.length; }
     }
 }

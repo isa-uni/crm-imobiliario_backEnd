@@ -11,6 +11,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +24,8 @@ import crm_imobiliario.back.model.repository.EquipeRepository;
 import crm_imobiliario.back.model.repository.LeadRepository;
 import crm_imobiliario.back.model.repository.LeadResponsavelHistoricoRepository;
 import crm_imobiliario.back.model.repository.UsuarioRepository;
+import crm_imobiliario.back.util.RecursoNaoEncontradoException;
+import crm_imobiliario.back.util.RegraNegocioException;
 
 @Service
 public class LeadAtribuicaoService {
@@ -39,92 +42,150 @@ public class LeadAtribuicaoService {
     private NotificacaoService notificacaoService;
 
     private Equipe resolverEquipeUsuario(Usuario u) {
-        if (u == null) return null;
-        if (u.getEquipe() != null) return u.getEquipe();
-        if (u.getGestor() != null) {
-            // tenta via gestor
-            if (u.getGestor().getEquipe() != null) return u.getGestor().getEquipe();
-            return equipeRepository.findByGestorId(u.getGestor().getId()).orElse(null);
-        }
-        // se é gestor sem equipe direta, tenta via equipe onde é gestor
-        return equipeRepository.findByGestorId(u.getId()).orElse(null);
+        return EquipeResolver.resolver(u, equipeRepository);
     }
 
+    /** Leads hoje atribuídos ao corretor — os que irão para a redistribuição se ele for inativado. */
+    public long contarLeadsAtribuidos(Long corretorId) {
+        return leadRepository.findByCorretorId(corretorId).stream().filter(l -> "ATRIBUIDO".equals(l.getStatusAtribuicao())).count();
+    }
+
+    /** Limite de leads por atribuição em massa (mesmo tamanho máximo de página da tela de redistribuição). */
+    public static final int MAX_EM_MASSA = 100;
+
+    /**
+     * Gestor que responde pelos leads do corretor: o gestor vinculado, se existir e estiver ativo.
+     * Retorna null quando o corretor não tem gestor (ou o gestor está inativo).
+     */
+    public static Usuario gestorAtivo(Usuario corretor) {
+        Usuario g = corretor != null ? corretor.getGestor() : null;
+        if (g == null || !g.isAtivo() || (corretor.getId() != null && corretor.getId().equals(g.getId()))) return null;
+        return g;
+    }
+
+    /**
+     * Inativação de corretor: os leads atribuídos a ele passam a aguardar redistribuição e ganham um
+     * responsável — o gestor do corretor ou, sem gestor, quem fez a inativação. O responsável é notificado
+     * (plataforma + e-mail). Retorna o responsável definido (null se não havia leads).
+     */
     @Transactional
-    public void desligamentoCorretor(Long corretorId, Usuario solicitante) {
-        Usuario corretor = usuarioRepository.findById(corretorId).orElseThrow(() -> new RuntimeException("Corretor não encontrado"));
+    public Usuario desligamentoCorretor(Long corretorId, Usuario solicitante) {
+        Usuario corretor = usuarioRepository.findById(corretorId).orElseThrow(() -> new RecursoNaoEncontradoException("O corretor informado não foi encontrado."));
         List<Lead> leads = leadRepository.findByCorretorId(corretorId).stream()
                 .filter(l -> "ATRIBUIDO".equals(l.getStatusAtribuicao()))
                 .toList();
+        if (leads.isEmpty()) return null;
+
+        Usuario gestor = gestorAtivo(corretor);
+        // nunca o próprio corretor inativado: sem gestor, responde quem fez a inativação
+        Usuario responsavel = gestor != null ? gestor
+                : (solicitante != null && !solicitante.getId().equals(corretor.getId()) ? solicitante : null);
+
         for (Lead lead : leads) {
-            // encerra histórico aberto
-            List<LeadResponsavelHistorico> hist = historicoRepository.findByLeadIdOrderByDataInicioDesc(lead.getId());
-            for (LeadResponsavelHistorico h : hist) {
-                if (h.getDataFim() == null) {
-                    h.setDataFim(LocalDateTime.now());
-                    historicoRepository.save(h);
-                    break;
-                }
-            }
-            Usuario anterior = lead.getCorretor();
+            encerrarHistoricoAberto(lead);
             lead.setCorretor(null);
-            // corretor_responsavel mantido como null para indicar aguardo? mantemos string vazia
             lead.setCorretor_responsavel(null);
             lead.setStatusAtribuicao("AGUARDANDO_REDISTRIBUICAO");
+            lead.setResponsavelRedistribuicao(responsavel);
             // equipe permanece
             leadRepository.save(lead);
 
-            LeadResponsavelHistorico novo = LeadResponsavelHistorico.builder()
+            historicoRepository.save(LeadResponsavelHistorico.builder()
                     .lead(lead)
                     .corretor(null)
                     .equipe(lead.getEquipe())
-                    .gestor(null)
+                    .gestor(gestor)
                     .dataInicio(LocalDateTime.now())
                     .motivo("DESLIGAMENTO_CORRETOR")
                     .usuarioResponsavel(solicitante)
-                    .build();
-            historicoRepository.save(novo);
-
-            // notifica apenas se anterior estava ativo - mas corretor está sendo inativado, então não notifica removido (regra)
-            // porém se houver transição, o anterior já é inativo, não notifica
-            // notificações de recebimento serão feitas na redistribuição
+                    .build());
         }
+        notificacaoService.notificarRedistribuicaoPendente(responsavel, corretor, leads, gestor != null);
+        return responsavel;
     }
 
     @Transactional
     public Lead redistribuir(Long leadId, Long novoCorretorId, Usuario solicitante) {
-        Lead lead = leadRepository.findById(leadId).orElseThrow(() -> new RuntimeException("Cliente não encontrado"));
-        Usuario novoCorretor = usuarioRepository.findById(novoCorretorId).orElseThrow(() -> new RuntimeException("Corretor destino não encontrado"));
+        Lead lead = leadRepository.findById(leadId).orElseThrow(() -> new RecursoNaoEncontradoException("O lead solicitado não foi encontrado. Ele pode ter sido removido."));
+        Usuario novoCorretor = buscarCorretorDestino(novoCorretorId);
+        Usuario corretorAnterior = lead.getCorretor();
+        Lead salvo = atribuir(lead, novoCorretor, solicitante);
+        notificacaoService.notificarTransferencia(salvo, corretorAnterior, novoCorretor);
+        notificacaoService.notificarLeadsRecebidos(novoCorretor, List.of(salvo), solicitante);
+        return salvo;
+    }
 
+    /**
+     * Atribuição em massa (tela de redistribuição): todos os leads selecionados vão para o mesmo corretor
+     * numa única transação. Cada lead passa pelas mesmas regras da atribuição individual; se qualquer um
+     * for inválido, nenhum é atribuído e a mensagem diz qual lead e por quê. O corretor recebe uma única
+     * notificação (e um único e-mail) com todos os leads.
+     */
+    @Transactional
+    public List<Lead> redistribuirEmMassa(List<Long> leadIds, Long novoCorretorId, Usuario solicitante) {
+        if (leadIds == null || leadIds.isEmpty()) {
+            throw new RegraNegocioException("Selecione pelo menos um lead para atribuir.", "leadIds", "EMPTY_SELECTION");
+        }
+        List<Long> ids = leadIds.stream().filter(java.util.Objects::nonNull).distinct().toList();
+        if (ids.size() > MAX_EM_MASSA) {
+            throw new RegraNegocioException("Selecione no máximo " + MAX_EM_MASSA + " leads por vez.", "leadIds", "TOO_MANY_LEADS");
+        }
+        Usuario novoCorretor = buscarCorretorDestino(novoCorretorId);
+
+        List<Lead> leads = leadRepository.findAllById(ids);
+        if (leads.size() != ids.size()) {
+            int faltam = ids.size() - leads.size();
+            throw new RecursoNaoEncontradoException((faltam == 1 ? "1 lead selecionado não foi encontrado" : faltam + " leads selecionados não foram encontrados")
+                    + ". Atualize a lista e selecione novamente.");
+        }
+        // mantém a ordem da seleção
+        Map<Long, Lead> porId = leads.stream().collect(Collectors.toMap(Lead::getId, l -> l));
+        List<Lead> ordenados = ids.stream().map(porId::get).toList();
+
+        for (Lead lead : ordenados) {
+            if (!"AGUARDANDO_REDISTRIBUICAO".equals(lead.getStatusAtribuicao())) {
+                String atual = lead.getCorretor() != null ? " a " + lead.getCorretor().getNome() : "";
+                throw new RegraNegocioException("O lead " + lead.getNome() + " já foi atribuído" + atual
+                        + " e não está mais aguardando redistribuição. Atualize a lista e tente novamente. Nenhum lead foi atribuído.",
+                        "leadIds", "LEAD_NOT_WAITING");
+            }
+        }
+        List<Lead> atribuidos = new ArrayList<>();
+        for (Lead lead : ordenados) {
+            atribuidos.add(atribuir(lead, novoCorretor, solicitante));
+        }
+        notificacaoService.notificarLeadsRecebidos(novoCorretor, atribuidos, solicitante);
+        return atribuidos;
+    }
+
+    private Usuario buscarCorretorDestino(Long novoCorretorId) {
+        if (novoCorretorId == null) throw new RegraNegocioException("Selecione o novo corretor responsável.", "novoCorretorId", "MISSING_TARGET");
+        return usuarioRepository.findById(novoCorretorId).orElseThrow(() -> new RecursoNaoEncontradoException("O corretor selecionado não foi encontrado. Atualize a página e escolha outro."));
+    }
+
+    /** Regras e registro de uma atribuição (usadas pela individual e pela em massa). Não notifica. */
+    private Lead atribuir(Lead lead, Usuario novoCorretor, Usuario solicitante) {
         // validações §10
-        if (!novoCorretor.isAtivo()) throw new RuntimeException("Corretor de destino está inativo");
+        if (!novoCorretor.isAtivo()) throw new RegraNegocioException("Não é possível atribuir o lead a " + novoCorretor.getNome() + " porque o usuário está inativo. Escolha um corretor ativo.", "novoCorretorId", "TARGET_INACTIVE");
         String papel = novoCorretor.getPapel() != null ? novoCorretor.getPapel().getPapel() : "";
-        if (!"corretor".equals(papel) && !"gestor".equals(papel) && !"admin".equals(papel)) throw new RuntimeException("Destino não é corretor válido");
+        if (!"corretor".equals(papel) && !"gestor".equals(papel) && !"admin".equals(papel)) throw new RegraNegocioException("Não é possível atribuir o lead a " + novoCorretor.getNome() + " porque o papel \"" + papel + "\" não pode receber leads.", "novoCorretorId", "TARGET_INVALID_ROLE");
+
+        // permissão primeiro: quem não pode mexer no lead recebe esse motivo, não o de equipe
+        validarPermissao(solicitante, lead);
 
         // equipe compatível
         if (lead.getEquipe() != null && novoCorretor.getEquipe() != null && !lead.getEquipe().getId().equals(novoCorretor.getEquipe().getId())) {
             // admin pode cruzar equipes, gestor não
             String solicitantePapel = solicitante.getPapel() != null ? solicitante.getPapel().getPapel() : "";
             if (!"admin".equals(solicitantePapel)) {
-                throw new RuntimeException("Corretor pertence à equipe " + novoCorretor.getEquipe().getNome() + ", cliente pertence à equipe " + lead.getEquipe().getNome());
+                throw new RegraNegocioException("Não é possível atribuir o lead " + lead.getNome() + " a " + novoCorretor.getNome() + " porque ele é da equipe " + novoCorretor.getEquipe().getNome() + " e o lead é da equipe " + lead.getEquipe().getNome() + ". Somente administradores podem transferir leads entre equipes.", "novoCorretorId", "TEAM_MISMATCH");
             }
         }
-
-        // permissão
-        validarPermissao(solicitante, lead);
 
         String statusAnterior = lead.getStatusAtribuicao();
         Usuario corretorAnterior = lead.getCorretor();
 
-        // encerra histórico aberto
-        List<LeadResponsavelHistorico> hist = historicoRepository.findByLeadIdOrderByDataInicioDesc(lead.getId());
-        for (LeadResponsavelHistorico h : hist) {
-            if (h.getDataFim() == null) {
-                h.setDataFim(LocalDateTime.now());
-                historicoRepository.save(h);
-                break;
-            }
-        }
+        encerrarHistoricoAberto(lead);
 
         Equipe eqNovo = resolverEquipeUsuario(novoCorretor);
         Equipe equipeFinal = eqNovo != null ? eqNovo : lead.getEquipe();
@@ -135,12 +196,13 @@ public class LeadAtribuicaoService {
         lead.setCorretor_responsavel(novoCorretor.getNome());
         lead.setEquipe(equipeFinal);
         lead.setStatusAtribuicao("ATRIBUIDO");
+        lead.setResponsavelRedistribuicao(null); // a pendência foi resolvida
         Lead salvo = leadRepository.save(lead);
 
         String motivo = corretorAnterior == null ? "REDISTRIBUICAO" : "ALTERACAO_MANUAL";
         if ("AGUARDANDO_REDISTRIBUICAO".equals(statusAnterior) || corretorAnterior == null) motivo = "REDISTRIBUICAO";
 
-        LeadResponsavelHistorico novoHist = LeadResponsavelHistorico.builder()
+        historicoRepository.save(LeadResponsavelHistorico.builder()
                 .lead(salvo)
                 .corretor(novoCorretor)
                 .equipe(salvo.getEquipe())
@@ -148,13 +210,19 @@ public class LeadAtribuicaoService {
                 .dataInicio(LocalDateTime.now())
                 .motivo(motivo)
                 .usuarioResponsavel(solicitante)
-                .build();
-        historicoRepository.save(novoHist);
-
-        // notificações
-        notificacaoService.notificarTransferencia(salvo, corretorAnterior, novoCorretor);
-
+                .build());
         return salvo;
+    }
+
+    private void encerrarHistoricoAberto(Lead lead) {
+        List<LeadResponsavelHistorico> hist = historicoRepository.findByLeadIdOrderByDataInicioDesc(lead.getId());
+        for (LeadResponsavelHistorico h : hist) {
+            if (h.getDataFim() == null) {
+                h.setDataFim(LocalDateTime.now());
+                historicoRepository.save(h);
+                break;
+            }
+        }
     }
 
     public List<Lead> listarAguardando(Long equipeId, Usuario solicitante) {
@@ -167,8 +235,10 @@ public class LeadAtribuicaoService {
         }
         if ("gestor".equals(papel)) {
             Equipe equipe = resolverEquipeUsuario(solicitante);
-            if (equipe == null) return List.of();
-            return leadRepository.findByStatusAtribuicao("AGUARDANDO_REDISTRIBUICAO").stream().filter(l -> l.getEquipe() != null && l.getEquipe().getId().equals(equipe.getId())).toList();
+            return leadRepository.findByStatusAtribuicao("AGUARDANDO_REDISTRIBUICAO").stream()
+                    .filter(l -> (equipe != null && l.getEquipe() != null && l.getEquipe().getId().equals(equipe.getId()))
+                            || (l.getResponsavelRedistribuicao() != null && solicitante.getId().equals(l.getResponsavelRedistribuicao().getId())))
+                    .toList();
         }
         return List.of();
     }
@@ -183,9 +253,9 @@ public class LeadAtribuicaoService {
             if (equipeId != null) leadsPage = leadRepository.findByStatusAtribuicaoAndEquipeId("AGUARDANDO_REDISTRIBUICAO", equipeId, pr);
             else leadsPage = leadRepository.findByStatusAtribuicao("AGUARDANDO_REDISTRIBUICAO", pr);
         } else if ("gestor".equals(papel)) {
+            // leads da equipe do gestor + os que ficaram sob responsabilidade dele
             Equipe equipe = resolverEquipeUsuario(solicitante);
-            if (equipe == null) return new PageImpl<>(List.of(), pr, 0);
-            leadsPage = leadRepository.findByStatusAtribuicaoAndEquipeId("AGUARDANDO_REDISTRIBUICAO", equipe.getId(), pr);
+            leadsPage = leadRepository.findAguardandoDaEquipeOuDoResponsavel(equipe != null ? equipe.getId() : -1L, solicitante.getId(), pr);
         } else {
             return new PageImpl<>(List.of(), pr, 0);
         }
@@ -215,12 +285,13 @@ public class LeadAtribuicaoService {
         String papel = solicitante.getPapel() != null ? solicitante.getPapel().getPapel() : "";
         if ("admin".equals(papel)) return;
         if ("gestor".equals(papel)) {
+            if (lead.getResponsavelRedistribuicao() != null && solicitante.getId().equals(lead.getResponsavelRedistribuicao().getId())) return;
             Equipe eqSolicitante = resolverEquipeUsuario(solicitante);
             if (eqSolicitante == null || lead.getEquipe() == null || !eqSolicitante.getId().equals(lead.getEquipe().getId())) {
-                throw new RuntimeException("Gestor só pode redistribuir clientes da sua equipe");
+                throw new AccessDeniedException("Você só pode redistribuir leads da sua equipe.");
             }
             return;
         }
-        throw new RuntimeException("Sem permissão para redistribuir");
+        throw new AccessDeniedException("Somente administradores e gestores podem redistribuir leads.");
     }
 }

@@ -1,5 +1,8 @@
 package crm_imobiliario.back.model.service.empreendimento;
 
+import crm_imobiliario.back.util.RecursoNaoEncontradoException;
+import crm_imobiliario.back.util.RegraNegocioException;
+
 import java.time.LocalDate;
 import java.util.*;
 import java.util.function.Function;
@@ -55,47 +58,70 @@ public class EmpreendimentoIaService {
 
     @Transactional(readOnly = true)
     public Page<EmpreendimentoCardDTO> listar(String cidade, String bairro, String status, Long precoMin, Long precoMax, String search, Pageable pageable) {
-        if (search != null && !search.isBlank()) {
-            List<Empreendimento> all = empreendimentoRepository.findByAtivoTrue();
-            List<Empreendimento> filtered = all.stream()
-                .filter(e -> e.getNome().toLowerCase().contains(search.toLowerCase()) || (e.getBairro()!=null && e.getBairro().toLowerCase().contains(search.toLowerCase())))
+        boolean filtroEmMemoria = (search != null && !search.isBlank())
+                || (bairro != null && !bairro.isBlank())
+                || (status != null && !status.isBlank());
+        if (filtroEmMemoria) {
+            // busca textual/bairro/status não existem na query do repositório: filtra TUDO primeiro e só
+            // depois pagina — antes bairro/status eram aplicados depois da paginação, o que deixava
+            // páginas com menos itens e totalElements incorreto
+            String termo = search != null ? search.toLowerCase() : null;
+            List<Empreendimento> filtered = empreendimentoRepository.findByAtivoTrue().stream()
+                .filter(e -> termo == null || termo.isBlank() || e.getNome().toLowerCase().contains(termo) || (e.getBairro()!=null && e.getBairro().toLowerCase().contains(termo)))
                 .filter(e -> cidade==null || cidade.isBlank() || cidade.equalsIgnoreCase(e.getCidade()))
                 .filter(e -> bairro==null || bairro.isBlank() || bairro.equalsIgnoreCase(e.getBairro()))
                 .filter(e -> status==null || status.isBlank() || status.equalsIgnoreCase(e.getStatus()))
+                // mesma semântica da query buscarComFiltros
+                .filter(e -> precoMin==null || (e.getPrecoMin()!=null && e.getPrecoMin() >= precoMin))
+                .filter(e -> precoMax==null || (e.getPrecoMax()!=null && e.getPrecoMax() <= precoMax))
+                .sorted(comparador(pageable.getSort()))
                 .collect(Collectors.toList());
-            int start = (int) pageable.getOffset();
+            int start = (int) Math.min(pageable.getOffset(), filtered.size());
             int end = Math.min(start + pageable.getPageSize(), filtered.size());
-            List<EmpreendimentoCardDTO> content = filtered.subList(Math.min(start, filtered.size()), end).stream().map(this::toCard).toList();
+            List<EmpreendimentoCardDTO> content = filtered.subList(start, end).stream().map(this::toCard).toList();
             return new PageImpl<>(content, pageable, filtered.size());
         }
         Page<Empreendimento> page = empreendimentoRepository.buscarComFiltros(cidade, null, null, precoMin, precoMax, pageable);
-        List<EmpreendimentoCardDTO> cards = page.getContent().stream().filter(e -> {
-            if (bairro!=null && !bairro.isBlank() && !bairro.equalsIgnoreCase(e.getBairro())) return false;
-            if (status!=null && !status.isBlank() && !status.equalsIgnoreCase(e.getStatus())) return false;
-            return true;
-        }).map(this::toCard).toList();
-        return new PageImpl<>(cards, pageable, page.getTotalElements());
+        return page.map(this::toCard);
+    }
+
+    /** Ordenação em memória equivalente ao Sort do Pageable (campos da whitelist do controller). */
+    private Comparator<Empreendimento> comparador(org.springframework.data.domain.Sort sort) {
+        Comparator<Empreendimento> cmp = Comparator.comparing(e -> e.getNome() != null ? e.getNome().toLowerCase() : "");
+        for (org.springframework.data.domain.Sort.Order o : sort) {
+            Comparator<Empreendimento> c = switch (o.getProperty()) {
+                case "cidade" -> Comparator.comparing(Empreendimento::getCidade, Comparator.nullsLast(String.CASE_INSENSITIVE_ORDER));
+                case "precoMin" -> Comparator.comparing(Empreendimento::getPrecoMin, Comparator.nullsLast(Comparator.naturalOrder()));
+                case "precoMax" -> Comparator.comparing(Empreendimento::getPrecoMax, Comparator.nullsLast(Comparator.naturalOrder()));
+                case "metragemMin" -> Comparator.comparing(Empreendimento::getMetragemMin, Comparator.nullsLast(Comparator.naturalOrder()));
+                case "disponiveis" -> Comparator.comparing(Empreendimento::getDisponiveis, Comparator.nullsLast(Comparator.naturalOrder()));
+                default -> Comparator.comparing(e -> e.getNome() != null ? e.getNome().toLowerCase() : "");
+            };
+            cmp = o.isDescending() ? c.reversed() : c;
+            break; // a whitelist do controller usa um único campo
+        }
+        return cmp;
     }
 
     @Transactional(readOnly = true)
     public EmpreendimentoDetalheDTO detalhar(Long id) {
-        Empreendimento emp = empreendimentoRepository.findById(id).orElseThrow(() -> new RuntimeException("Empreendimento não encontrado"));
+        Empreendimento emp = empreendimentoRepository.findById(id).orElseThrow(() -> new RecursoNaoEncontradoException("Empreendimento não encontrado"));
         return toDetalhe(emp);
     }
 
     @Transactional(readOnly = true)
     public EmpreendimentoDetalheDTO detalharPorSlug(String slug) {
-        Empreendimento emp = empreendimentoRepository.findBySlug(slug).orElseThrow(() -> new RuntimeException("Empreendimento não encontrado"));
+        Empreendimento emp = empreendimentoRepository.findBySlug(slug).orElseThrow(() -> new RecursoNaoEncontradoException("Empreendimento não encontrado"));
         return toDetalhe(emp);
     }
 
     @Transactional
     public EmpreendimentoDetalheDTO confirmar(EmpreendimentoConfirmacaoDTO dto, Long usuarioId) {
-        if (dto.getNome() == null || dto.getNome().isBlank()) throw new IllegalArgumentException("Nome é obrigatório");
+        if (dto.getNome() == null || dto.getNome().isBlank()) throw new RegraNegocioException("Informe o nome do empreendimento.", "nome", "MISSING_NAME");
         Empreendimento emp;
         boolean isUpdate = dto.getEmpreendimentoExistenteId() != null;
         if (isUpdate) {
-            emp = empreendimentoRepository.findById(dto.getEmpreendimentoExistenteId()).orElseThrow(() -> new RuntimeException("Empreendimento existente não encontrado"));
+            emp = empreendimentoRepository.findById(dto.getEmpreendimentoExistenteId()).orElseThrow(() -> new RecursoNaoEncontradoException("O empreendimento que você está editando não foi encontrado. Ele pode ter sido removido."));
         } else {
             emp = new Empreendimento();
             emp.setSlug(slugify(dto.getNome()));
@@ -241,11 +267,15 @@ public class EmpreendimentoIaService {
             }
         }
         if (dto.getUnidades() != null) {
+            // unidades existentes indexadas por nome uma única vez (antes: uma consulta de TODAS as
+            // unidades para cada unidade enviada — O(n²) em consultas e comparações)
+            Map<String, Unidade> existentes = new HashMap<>();
+            for (Unidade ex : unidadeRepository.findByEmpreendimentoId(emp.getId())) {
+                if (ex.getNomeUnidade() != null) existentes.putIfAbsent(ex.getNomeUnidade().toLowerCase(), ex);
+            }
             for (var uDto : dto.getUnidades()) {
                 if (uDto.getNomeUnidade() == null || uDto.getNomeUnidade().isBlank()) continue;
-                Unidade u = unidadeRepository.findByEmpreendimentoId(emp.getId()).stream()
-                    .filter(existente -> uDto.getNomeUnidade().equalsIgnoreCase(existente.getNomeUnidade()))
-                    .findFirst().orElseGet(Unidade::new);
+                Unidade u = existentes.getOrDefault(uDto.getNomeUnidade().toLowerCase(), new Unidade());
                 boolean novaUnidade = u.getId() == null;
                 Long precoAnterior = u.getPreco();
                 String situacaoAnterior = u.getSituacao();
@@ -269,6 +299,7 @@ public class EmpreendimentoIaService {
                 if (uDto.getLinhaOrigem() != null) u.setLinhaOrigem(uDto.getLinhaOrigem());
                 u.setStatusValidacao(uDto.getStatusValidacao() != null ? uDto.getStatusValidacao() : "confirmado");
                 u = unidadeRepository.save(u);
+                existentes.putIfAbsent(u.getNomeUnidade().toLowerCase(), u); // nome repetido no mesmo envio não duplica
 
                 if (!novaUnidade) {
                     if (uDto.getPreco() != null && !uDto.getPreco().equals(precoAnterior)) {

@@ -41,6 +41,9 @@ public class DashboardGestorController {
     @Autowired
     private MetaService metaService;
 
+    @Autowired
+    private crm_imobiliario.back.model.service.UsuarioService usuarioService;
+
     @GetMapping
     public ResponseEntity<DashboardGestorDTO> getDashboard(
             Authentication auth,
@@ -54,6 +57,9 @@ public class DashboardGestorController {
         String email = auth.getName();
         LocalDateTime ini;
         LocalDateTime fi;
+        if (inicio != null && fim != null && inicio.isAfter(fim)) {
+            throw new crm_imobiliario.back.util.RegraNegocioException("A data inicial deve ser igual ou anterior à data final.", "inicio", "INVALID_PERIOD");
+        }
         if (inicio != null && fim != null) {
             ini = inicio.atStartOfDay();
             fi = fim.atTime(LocalTime.MAX);
@@ -88,7 +94,10 @@ public class DashboardGestorController {
     }
 
     @PostMapping("/metas")
-    public ResponseEntity<?> criarOuAtualizarMeta(@RequestBody @Valid MetaCreateDTO dto) {
+    public ResponseEntity<?> criarOuAtualizarMeta(@RequestBody @Valid MetaCreateDTO dto, Authentication auth) {
+        // mesma regra do POST /metas: gestor só define metas dos próprios subordinados (antes não
+        // havia checagem e qualquer autenticado definia a meta de "gestor" de qualquer usuário)
+        metaService.validarPermissao(usuarioService.buscarPorEmail(auth.getName()), dto.getUsuarioId());
         // meta cadastrada pelo gestor no dashboard da equipe = sempre origem GESTOR
         MetaDTO salvo = metaService.criarOuAtualizar(dto, OrigemMeta.GESTOR);
         return ResponseEntity.ok(salvo);

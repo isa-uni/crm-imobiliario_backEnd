@@ -15,6 +15,8 @@ import crm_imobiliario.back.model.service.UsuarioService;
 @Component
 public class DataSeeder implements CommandLineRunner {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(DataSeeder.class);
+
     @Autowired
     private PapelRepository papelRepository;
 
@@ -65,7 +67,11 @@ public class DataSeeder implements CommandLineRunner {
                     null
             );
 
-            usuarioService.cadastrarUsuario(adminDTO);
+            UsuarioService.UsuarioCriado criado = usuarioService.cadastrarUsuario(adminDTO);
+            // senha temporária aleatória: exibida só aqui, no primeiro startup com banco vazio;
+            // o sistema exige a troca no primeiro login
+            log.warn("Usuário administrador inicial criado: {} — senha temporária: {} (troca obrigatória no primeiro acesso)",
+                    adminDTO.getEmail(), criado.senhaTemporaria());
         }
     }
 }

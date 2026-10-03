@@ -62,14 +62,14 @@ public class DashboardGestorService {
         List<Usuario> equipe = getEquipe(solicitante, papel);
         List<Long> equipeIds = equipe.stream().map(Usuario::getId).toList();
 
-        List<Lead> allLeads = leadRepository.findAll();
+        // nomes da equipe (fallback legado por corretor_responsavel) resolvidos em memória,
+        // sem uma consulta ao banco por lead
+        Map<String, Long> idPorNome = indexarPorNome(equipe);
 
-        // Filtro principal por período e equipe
-        List<Lead> filtrados = allLeads.stream()
-                .filter(l -> l.getDataCriacao() != null)
-                .filter(l -> !l.getDataCriacao().isBefore(inicio) && !l.getDataCriacao().isAfter(fim))
-                .filter(l -> filtroEquipe(l, equipeIds, papel, solicitante))
-                .filter(l -> corretorId == null || isLeadDoCorretor(l, corretorId))
+        // só os leads do período no banco (antes: findAll() da base inteira e filtro em memória)
+        List<Lead> filtrados = leadRepository.findByDataCriacaoBetween(inicio, fim).stream()
+                .filter(l -> filtroEquipe(l, equipeIds, idPorNome, papel, solicitante))
+                .filter(l -> corretorId == null || isLeadDoCorretor(l, corretorId, idPorNome))
                 .filter(l -> origem == null || origem.isBlank() || origem.equals(l.getOrigem()))
                 .filter(l -> status == null || status.isBlank() || status.equals(l.getStatus()))
                 .filter(l -> empreendimentoId == null || (l.getEmpreendimento() != null && empreendimentoId.equals(l.getEmpreendimento().getId())))
@@ -79,18 +79,20 @@ public class DashboardGestorService {
         long dias = ChronoUnit.DAYS.between(inicio, fim) + 1;
         LocalDateTime inicioAnt = inicio.minusDays(dias);
         LocalDateTime fimAnt = fim.minusDays(dias);
-        List<Lead> periodoAnterior = allLeads.stream()
-                .filter(l -> l.getDataCriacao() != null)
-                .filter(l -> !l.getDataCriacao().isBefore(inicioAnt) && !l.getDataCriacao().isAfter(fimAnt))
-                .filter(l -> filtroEquipe(l, equipeIds, papel, solicitante))
+        List<Lead> periodoAnterior = leadRepository.findByDataCriacaoBetween(inicioAnt, fimAnt).stream()
+                .filter(l -> filtroEquipe(l, equipeIds, idPorNome, papel, solicitante))
                 .collect(Collectors.toList());
 
+        // tramitações de todos os leads do período numa única consulta (antes: uma consulta por lead,
+        // repetida em ranking, KPIs e tempo médio)
+        Map<Long, List<Tramitacao>> tramitacoes = carregarTramitacoes(filtrados);
+
         DashboardGestorDTO dto = new DashboardGestorDTO();
-        dto.setKpis(calcularKpis(filtrados, periodoAnterior));
+        dto.setKpis(calcularKpis(filtrados, periodoAnterior, tramitacoes));
         dto.setPipeline(calcularPipeline(filtrados));
-        dto.setRankingCorretores(calcularRanking(filtrados, equipe));
+        dto.setRankingCorretores(calcularRanking(filtrados, equipe, tramitacoes));
         dto.setMetas(calcularMetas(equipe, filtrados, inicio));
-        dto.setTempoMedio(calcularTempoMedio(filtrados));
+        dto.setTempoMedio(calcularTempoMedio(filtrados, tramitacoes, idPorNome));
         dto.setOrigens(calcularOrigens(filtrados));
         dto.setHistorico(calcularHistorico(filtrados, inicio, fim));
         dto.setEmpreendimentosMaisProcurados(calcularEmpreendimentos(filtrados));
@@ -112,8 +114,7 @@ public class DashboardGestorService {
                     .collect(Collectors.toList());
         }
         if ("gestor".equals(papel)) {
-            List<Usuario> subs = usuarioRepository.findAll().stream()
-                    .filter(u -> u.getGestor() != null && u.getGestor().getId().equals(solicitante.getId()))
+            List<Usuario> subs = usuarioRepository.findByGestorId(solicitante.getId()).stream()
                     .filter(Usuario::isAtivo)
                     .collect(Collectors.toList());
             // gestor vê subordinados; se não tem subordinado, vê ao menos a si (para não ficar vazio)
@@ -129,38 +130,46 @@ public class DashboardGestorService {
         return List.of();
     }
 
-    private boolean filtroEquipe(Lead lead, List<Long> equipeIds, String papel, Usuario solicitante) {
+    /** nome do usuário (minúsculo) → id, para o fallback legado de leads sem corretor_id. */
+    private Map<String, Long> indexarPorNome(List<Usuario> usuarios) {
+        Map<String, Long> m = new HashMap<>();
+        for (Usuario u : usuarios) if (u.getNome() != null) m.putIfAbsent(u.getNome().toLowerCase(), u.getId());
+        return m;
+    }
+
+    private Map<Long, List<Tramitacao>> carregarTramitacoes(List<Lead> leads) {
+        if (leads.isEmpty()) return Map.of();
+        List<Long> ids = leads.stream().map(Lead::getId).toList();
+        return tramitacaoRepository.findByLeadIdInOrderByDataMovimentacaoAsc(ids).stream()
+                .collect(Collectors.groupingBy(t -> t.getLead().getId()));
+    }
+
+    private boolean filtroEquipe(Lead lead, List<Long> equipeIds, Map<String, Long> idPorNome, String papel, Usuario solicitante) {
         if ("admin".equals(papel)) return true;
-        // para gestor, verifica se lead pertence a alguém da equipe via corretor ou corretor_responsavel ou tramitacao
+        // gestor: lead pertence a alguém da equipe via corretor_id
         if (lead.getCorretor() != null) {
             return equipeIds.contains(lead.getCorretor().getId());
         }
-        // fallback: tenta match por nome do corretor_responsavel
+        // fallback legado: corretor_responsavel (nome) de alguém da equipe
         if (lead.getCorretor_responsavel() != null) {
-            // busca usuario da equipe com nome igual
-            return equipeIds.stream().anyMatch(id -> {
-                Usuario u = usuarioRepository.findById(id).orElse(null);
-                return u != null && lead.getCorretor_responsavel().equalsIgnoreCase(u.getNome());
-            });
+            Long id = idPorNome.get(lead.getCorretor_responsavel().toLowerCase());
+            return id != null && equipeIds.contains(id);
         }
-        // se não tem vínculo, inclui se equipe é vazia e lead é órfão? Para gestor com equipe, órfãos não aparecem
-        // Para admin já retornou true
-        // Para gestor, órfãos contam como não atribuídos, mas mostramos apenas se lead foi criado por equipe (via tramitação)
-        // Simplificação: se não há corretor, não filtra (aparece para admin, para gestor aparece)
-        // Vamos incluir órfãos para gestor apenas se equipeIds contém solicitante e lead sem dono = considera órfão da equipe
-        return true; // temporário: sem vínculo, mostra para todos (será corrigido quando corretor_id for preenchido)
+        // lead sem responsável (ex.: aguardando redistribuição): só entra se for da equipe do gestor.
+        // Antes retornava true para qualquer órfão ("temporário"), e gestores viam leads de outras equipes.
+        return lead.getEquipe() != null && solicitante.getEquipe() != null
+                && lead.getEquipe().getId().equals(solicitante.getEquipe().getId());
     }
 
-    private boolean isLeadDoCorretor(Lead l, Long corretorId) {
+    private boolean isLeadDoCorretor(Lead l, Long corretorId, Map<String, Long> idPorNome) {
         if (l.getCorretor() != null) return corretorId.equals(l.getCorretor().getId());
         if (l.getCorretor_responsavel() != null) {
-            Usuario u = usuarioRepository.findById(corretorId).orElse(null);
-            return u != null && l.getCorretor_responsavel().equalsIgnoreCase(u.getNome());
+            return corretorId.equals(idPorNome.get(l.getCorretor_responsavel().toLowerCase()));
         }
         return false;
     }
 
-    private DashboardGestorDTO.KpiDTO calcularKpis(List<Lead> atuais, List<Lead> anteriores) {
+    private DashboardGestorDTO.KpiDTO calcularKpis(List<Lead> atuais, List<Lead> anteriores, Map<Long, List<Tramitacao>> tramitacoes) {
         long leads = atuais.size();
         long negocios = atuais.stream().filter(l -> "contrato".equals(l.getStatus())).count();
         double valor = atuais.stream().filter(l -> "contrato".equals(l.getStatus()))
@@ -169,7 +178,7 @@ public class DashboardGestorService {
         double ticket = negocios > 0 ? valor / negocios : 0;
 
         // tempo médio até fechamento
-        double tempoMedio = calcularTempoMedioGeral(atuais);
+        double tempoMedio = calcularTempoMedioGeral(atuais, tramitacoes);
 
         long leadsAnt = anteriores.size();
         long negAnt = anteriores.stream().filter(l -> "contrato".equals(l.getStatus())).count();
@@ -189,13 +198,13 @@ public class DashboardGestorService {
                 .build();
     }
 
-    private double calcularTempoMedioGeral(List<Lead> leads) {
+    private double calcularTempoMedioGeral(List<Lead> leads, Map<Long, List<Tramitacao>> tramitacoes) {
         List<Lead> contratos = leads.stream().filter(l -> "contrato".equals(l.getStatus())).toList();
         if (contratos.isEmpty()) return 0;
         double sum = 0;
         int count = 0;
         for (Lead l : contratos) {
-            List<Tramitacao> trams = tramitacaoRepository.findByLeadIdOrderByDataMovimentacaoAsc(l.getId());
+            List<Tramitacao> trams = tramitacoes.getOrDefault(l.getId(), List.of());
             if (trams.size() >= 1) {
                 LocalDateTime inicio = l.getDataCriacao();
                 // última tramitação com status contrato
@@ -238,7 +247,7 @@ public class DashboardGestorService {
         return res;
     }
 
-    private List<DashboardGestorDTO.RankingCorretorDTO> calcularRanking(List<Lead> leads, List<Usuario> equipe) {
+    private List<DashboardGestorDTO.RankingCorretorDTO> calcularRanking(List<Lead> leads, List<Usuario> equipe, Map<Long, List<Tramitacao>> tramitacoes) {
         // agrupa por corretor (via corretor_id ou corretor_responsavel)
         Map<Long, List<Lead>> porCorretor = new HashMap<>();
         Map<String, List<Lead>> porNomeFallback = new HashMap<>();
@@ -254,8 +263,7 @@ public class DashboardGestorService {
         // também conta tramitações como contatos
         Map<Long, Long> contatosPorCorretor = new HashMap<>();
         for (Lead l : leads) {
-            List<Tramitacao> trams = tramitacaoRepository.findByLeadIdOrderByDataMovimentacaoAsc(l.getId());
-            for (Tramitacao t : trams) {
+            for (Tramitacao t : tramitacoes.getOrDefault(l.getId(), List.of())) {
                 if (t.getUsuario() != null) {
                     contatosPorCorretor.merge(t.getUsuario().getId(), 1L, Long::sum);
                 }
@@ -357,16 +365,16 @@ public class DashboardGestorService {
                 .orElseGet(() -> metas.stream().filter(m -> m.getOrigem() == OrigemMeta.GESTOR).findFirst().orElse(null));
     }
 
-    private DashboardGestorDTO.TempoMedioDTO calcularTempoMedio(List<Lead> leads) {
+    private DashboardGestorDTO.TempoMedioDTO calcularTempoMedio(List<Lead> leads, Map<Long, List<Tramitacao>> tramitacoes, Map<String, Long> idPorNome) {
         // contratos no período
         List<Lead> contratos = leads.stream().filter(l->"contrato".equals(l.getStatus())).toList();
-        double mediaGeral = calcularTempoMedioGeral(leads);
+        double mediaGeral = calcularTempoMedioGeral(leads, tramitacoes);
 
         // por corretor
         Map<Long, List<Long>> diasPorCorretor = new HashMap<>();
-        List<Usuario> todosUsuarios = null; // carregado uma vez, só se algum lead precisar do match por nome
+        Map<Long, String> nomePorCorretor = new HashMap<>();
         for (Lead l : contratos) {
-            List<Tramitacao> trams = tramitacaoRepository.findByLeadIdOrderByDataMovimentacaoAsc(l.getId());
+            List<Tramitacao> trams = tramitacoes.getOrDefault(l.getId(), List.of());
             LocalDateTime ini = l.getDataCriacao();
             Tramitacao fech = trams.stream().filter(t->"contrato".equals(t.getStatus_atual())).reduce((a,b)->b).orElse(null);
             LocalDateTime fim = fech != null ? fech.getDataMovimentacao() : l.getDataAtualizacao();
@@ -374,20 +382,22 @@ public class DashboardGestorService {
             long dias = ChronoUnit.DAYS.between(ini, fim);
             if (dias<0) dias=0;
             Long corrId = l.getCorretor()!=null ? l.getCorretor().getId() : null;
+            String nome = l.getCorretor()!=null ? l.getCorretor().getNome() : l.getCorretor_responsavel();
             if (corrId==null && l.getCorretor_responsavel()!=null) {
-                // tenta achar id por nome
-                if (todosUsuarios == null) todosUsuarios = usuarioRepository.findAll();
-                Usuario u = todosUsuarios.stream().filter(x->l.getCorretor_responsavel().equalsIgnoreCase(x.getNome())).findFirst().orElse(null);
-                if (u!=null) corrId = u.getId();
+                // fallback legado: id pelo nome (índice em memória, sem consulta por lead)
+                corrId = idPorNome.get(l.getCorretor_responsavel().toLowerCase());
             }
-            if (corrId!=null) diasPorCorretor.computeIfAbsent(corrId,k->new ArrayList<>()).add(dias);
+            if (corrId!=null) {
+                diasPorCorretor.computeIfAbsent(corrId,k->new ArrayList<>()).add(dias);
+                nomePorCorretor.putIfAbsent(corrId, nome);
+            }
         }
         List<DashboardGestorDTO.TempoCorretorDTO> porCorr = new ArrayList<>();
         for (Map.Entry<Long, List<Long>> e: diasPorCorretor.entrySet()) {
             double avg = e.getValue().stream().mapToLong(Long::longValue).average().orElse(0);
-            Usuario u = usuarioRepository.findById(e.getKey()).orElse(null);
+            String nome = nomePorCorretor.get(e.getKey());
             porCorr.add(DashboardGestorDTO.TempoCorretorDTO.builder()
-                    .corretorId(e.getKey()).nome(u!=null?u.getNome():"-")
+                    .corretorId(e.getKey()).nome(nome!=null?nome:"-")
                     .mediaDias(avg).totalNegocios(e.getValue().size()).build());
         }
 
@@ -395,7 +405,7 @@ public class DashboardGestorService {
         Map<String, List<Long>> porMes = new HashMap<>();
         for (Lead l : contratos) {
             String mes = YearMonth.from(l.getDataCriacao()).toString(); // yyyy-MM
-            List<Tramitacao> trams = tramitacaoRepository.findByLeadIdOrderByDataMovimentacaoAsc(l.getId());
+            List<Tramitacao> trams = tramitacoes.getOrDefault(l.getId(), List.of());
             Tramitacao fech = trams.stream().filter(t->"contrato".equals(t.getStatus_atual())).reduce((a,b)->b).orElse(null);
             LocalDateTime fim = fech != null ? fech.getDataMovimentacao() : l.getDataAtualizacao();
             if (l.getDataCriacao()==null || fim==null) continue;

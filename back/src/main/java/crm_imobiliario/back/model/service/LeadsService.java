@@ -1,5 +1,7 @@
 package crm_imobiliario.back.model.service;
 
+import crm_imobiliario.back.util.validacao.Documentos;
+
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -27,6 +29,8 @@ import crm_imobiliario.back.model.entity.Usuario;
 import crm_imobiliario.back.model.repository.EmpreendimentoRepository;
 import crm_imobiliario.back.model.repository.LeadRepository;
 import crm_imobiliario.back.model.repository.TramitacaoRepository;
+import crm_imobiliario.back.util.RecursoNaoEncontradoException;
+import crm_imobiliario.back.util.RegraNegocioException;
 import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
 
@@ -49,13 +53,29 @@ public class LeadsService {
     @Autowired
     private crm_imobiliario.back.model.repository.EquipeRepository equipeRepository;
 
+    /** Status aceitos pelo funil (não há CHECK no banco; a validação fica aqui). */
+    static final java.util.Set<String> STATUS_VALIDOS = java.util.Set.of(
+            "lead", "oportunidade", "visita-agendada", "visita-realizada", "pasta", "aprovado", "contrato", "descarte");
+
+    private void validarStatus(String status) {
+        if (status != null && !STATUS_VALIDOS.contains(status)) {
+            throw new RegraNegocioException("O status \"" + status + "\" não é válido para um lead.", "status", "INVALID_STATUS");
+        }
+    }
+
+    /** E-mail é opcional (muitos leads chegam só com telefone); vazio vira null. */
+    private static String normalizarEmail(String email) {
+        return email == null || email.isBlank() ? null : email.trim();
+    }
+
     public Lead cadastrarLeads(LeadsDTO dto) {
+        validarStatus(dto.getStatus());
 
         Lead lead = new Lead();
 
         lead.setNome(dto.getNome());
-        lead.setEmail(dto.getEmail());
-        lead.setTelefone(dto.getTelefone());
+        lead.setEmail(normalizarEmail(dto.getEmail()));
+        lead.setTelefone(Documentos.somenteDigitos(dto.getTelefone()));
         lead.setOrigem(dto.getOrigem());
         lead.setHistorico(dto.getHistorico());
         lead.setStatus(dto.getStatus());
@@ -75,7 +95,7 @@ public class LeadsService {
         
         if (dto.getEmpreendimentoId() != null) {
             Empreendimento empreendimento = empreendimentoRepository.findById(dto.getEmpreendimentoId())
-                    .orElseThrow(() -> new RuntimeException("Empreendimento não encontrado"));
+                    .orElseThrow(() -> new RecursoNaoEncontradoException("O empreendimento selecionado não foi encontrado. Atualize a página e escolha outro."));
 
             lead.setEmpreendimento(empreendimento);
         } else {
@@ -103,13 +123,15 @@ public class LeadsService {
             return salvo;
 
         } catch (DataIntegrityViolationException e) {
-            throw new RuntimeException("Lead já cadastrado");
+            // o e-mail do lead deixou de ser único (V5); a violação é traduzida pelo GlobalExceptionHandler
+            // com o motivo real (ex.: dado obrigatório ausente), em vez de um genérico "Lead já cadastrado"
+            throw e;
         }
     }
 
     public Lead atualizarLeads(Long id, LeadAtualizacaoDTO dto) {
         Lead lead = leadRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Lead não encontrado"));
+                .orElseThrow(() -> new RecursoNaoEncontradoException("O lead solicitado não foi encontrado. Ele pode ter sido removido."));
         verificarAcesso(lead);
 
         String statusAnterior = lead.getStatus();
@@ -120,11 +142,11 @@ public class LeadsService {
         }
 
         if (dto.getEmail() != null) {
-            lead.setEmail(dto.getEmail());
+            lead.setEmail(normalizarEmail(dto.getEmail()));
         }
 
         if (dto.getTelefone() != null) {
-            lead.setTelefone(dto.getTelefone());
+            lead.setTelefone(Documentos.somenteDigitos(dto.getTelefone()));
         }
 
         if (dto.getOrigem() != null) {
@@ -136,10 +158,11 @@ public class LeadsService {
         }
 
         if (dto.getStatus() != null) {
+            validarStatus(dto.getStatus());
             lead.setStatus(dto.getStatus());
             if ("descarte".equals(dto.getStatus())) {
                 if (dto.getMotivoDescarte() == null || dto.getMotivoDescarte().isBlank()) {
-                    throw new RuntimeException("Motivo do descarte é obrigatório");
+                    throw new RegraNegocioException("Informe o motivo do descarte para descartar o lead.", "motivoDescarte", "MISSING_DISCARD_REASON");
                 }
                 lead.setAtivo(false);
             } else {
@@ -161,7 +184,7 @@ public class LeadsService {
 
         if (dto.getEmpreendimentoId() != null) {
             Empreendimento empreendimento = empreendimentoRepository.findById(dto.getEmpreendimentoId())
-                .orElseThrow(() -> new RuntimeException("Empreendimento não encontrado"));
+                .orElseThrow(() -> new RecursoNaoEncontradoException("O empreendimento selecionado não foi encontrado. Atualize a página e escolha outro."));
 
             lead.setEmpreendimento(empreendimento);
         } else if (Boolean.TRUE.equals(dto.getLimparEmpreendimento())) {
@@ -180,7 +203,7 @@ public class LeadsService {
 
     public List<Tramitacao> listarTramitacoes(Long leadId) {
         Lead lead = leadRepository.findById(leadId)
-                .orElseThrow(() -> new RuntimeException("Lead não encontrado"));
+                .orElseThrow(() -> new RecursoNaoEncontradoException("O lead solicitado não foi encontrado. Ele pode ter sido removido."));
         verificarAcesso(lead);
         return tramitacaoRepository.findByLeadIdOrderByDataMovimentacaoAsc(leadId);
     }
@@ -212,17 +235,11 @@ public class LeadsService {
     }
 
     private Equipe resolverEquipeUsuario(Usuario u) {
-        if (u == null) return null;
-        if (u.getEquipe() != null) return u.getEquipe();
-        if (u.getGestor() != null) {
-            if (u.getGestor().getEquipe() != null) return u.getGestor().getEquipe();
-            return equipeRepository.findByGestorId(u.getGestor().getId()).orElse(null);
-        }
-        return equipeRepository.findByGestorId(u.getId()).orElse(null);
+        return EquipeResolver.resolver(u, equipeRepository);
     }
 
     private String papelDe(Usuario u) {
-        return u != null && u.getPapel() != null ? u.getPapel().getPapel() : "";
+        return EquipeResolver.papel(u);
     }
 
     private boolean podeVer(Lead lead, Usuario solicitante) {
@@ -250,8 +267,8 @@ public class LeadsService {
 
     private void verificarAcesso(Lead lead) {
         Usuario solicitante = usuarioLogado();
-        if (solicitante == null) throw new AccessDeniedException("Não autenticado");
-        if (!podeVer(lead, solicitante)) throw new AccessDeniedException("Você não possui permissão para acessar este cliente");
+        if (solicitante == null) throw new AccessDeniedException("Sua sessão expirou. Faça login novamente.");
+        if (!podeVer(lead, solicitante)) throw new AccessDeniedException("Você não tem permissão para acessar este lead. Ele pertence a outro corretor ou a outra equipe.");
     }
 
     private Specification<Lead> specEscopo(Usuario solicitante) {
@@ -330,7 +347,7 @@ public class LeadsService {
     /** Todos os leads que batem com o filtro (sem paginação) — usado pela exportação, que precisa do conjunto completo, não só de uma página. */
     public List<Lead> findAllForExport(String search, String status, String month, String origem, String historico) {
         Usuario solicitante = usuarioLogado();
-        if (solicitante == null) throw new AccessDeniedException("Não autenticado");
+        if (solicitante == null) throw new AccessDeniedException("Sua sessão expirou. Faça login novamente.");
         Specification<Lead> spec = Specification.where(specEscopo(solicitante))
                 .and(specSearch(search))
                 .and(specStatus(status))
@@ -342,7 +359,7 @@ public class LeadsService {
 
     public void inativarLead(Long id) {
         Lead lead = leadRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Lead não encontrado"));
+                .orElseThrow(() -> new RecursoNaoEncontradoException("O lead solicitado não foi encontrado. Ele pode ter sido removido."));
         verificarAcesso(lead);
         lead.setAtivo(false);
         leadRepository.save(lead);
@@ -350,7 +367,7 @@ public class LeadsService {
 
     public void ativarLead(Long id) {
         Lead lead = leadRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Lead não encontrado"));
+                .orElseThrow(() -> new RecursoNaoEncontradoException("O lead solicitado não foi encontrado. Ele pode ter sido removido."));
         verificarAcesso(lead);
         lead.setAtivo(true);
         leadRepository.save(lead);
@@ -358,7 +375,7 @@ public class LeadsService {
 
     public List<LeadListaDTO> ConsultarLeads() {
         Usuario solicitante = usuarioLogado();
-        if (solicitante == null) throw new AccessDeniedException("Não autenticado");
+        if (solicitante == null) throw new AccessDeniedException("Sua sessão expirou. Faça login novamente.");
         String papel = papelDe(solicitante);
         if ("admin".equals(papel)) {
             Specification<Lead> spec = specEscopo(solicitante);
@@ -382,7 +399,7 @@ public class LeadsService {
         int p = Math.max(0, page);
         int s = Math.min(Math.max(1, size), 100);
         Usuario solicitante = usuarioLogado();
-        if (solicitante == null) throw new AccessDeniedException("Não autenticado");
+        if (solicitante == null) throw new AccessDeniedException("Sua sessão expirou. Faça login novamente.");
         Specification<Lead> spec = Specification.where(specEscopo(solicitante))
                 .and(specSearch(search))
                 .and(specStatus(status))
@@ -393,18 +410,32 @@ public class LeadsService {
         return new PageImpl<>(content, pr, pg.getTotalElements());
     }
 
-    public void deletarLead(Long id){
-        Lead lead = leadRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException(
-                        "Lead com id " + id + " não encontrado"
-                ));
+    /**
+     * Contadores dos cards da tela de Leads, calculados no banco (COUNT) sobre todos os leads do
+     * escopo do usuário — antes o front contava só os 20 leads da página visível.
+     */
+    public java.util.Map<String, Long> resumo() {
+        Usuario solicitante = usuarioLogado();
+        if (solicitante == null) throw new AccessDeniedException("Sua sessão expirou. Faça login novamente.");
+        Specification<Lead> escopo = Specification.where(specEscopo(solicitante));
+        return java.util.Map.of(
+                "total", leadRepository.count(escopo),
+                "ativos", leadRepository.count(escopo.and(specStatus("active"))),
+                "contratos", leadRepository.count(escopo.and(specStatus("contrato"))),
+                "esteMes", leadRepository.count(escopo.and(specMonth("current"))));
+    }
+
+    /** Histórico de responsáveis do lead, respeitando o mesmo escopo de visibilidade do lead. */
+    public List<crm_imobiliario.back.model.entity.LeadResponsavelHistorico> listarHistoricoResponsaveis(Long leadId) {
+        Lead lead = leadRepository.findById(leadId)
+                .orElseThrow(() -> new RecursoNaoEncontradoException("O lead solicitado não foi encontrado. Ele pode ter sido removido."));
         verificarAcesso(lead);
-        leadRepository.delete(lead);
+        return historicoRepository.findByLeadIdOrderByDataInicioAsc(leadId);
     }
 
     public MetricsDTO getMetrics() {
         Usuario solicitante = usuarioLogado();
-        if (solicitante == null) throw new AccessDeniedException("Não autenticado");
+        if (solicitante == null) throw new AccessDeniedException("Sua sessão expirou. Faça login novamente.");
         Specification<Lead> spec = specEscopo(solicitante);
         List<Lead> leads = leadRepository.findAll(spec);
 

@@ -31,18 +31,19 @@ public class EmpreendimentoStorageService {
     private static final Set<String> ALLOWED_EXT = Set.of("pdf","doc","docx","xls","xlsx","csv","jpg","jpeg","png");
 
     public EmpreendimentoStorageService(EmpreendimentoDocumentoRepository documentoRepository,
-                                       @Value("${crm.pdf-storage:./data/pdfs}") String base) {
+                                       @Value("${crm.pdf-storage:./data/empreendimentos}") String base) {
         this.documentoRepository = documentoRepository;
-        this.basePath = Paths.get("./data/empreendimentos").toAbsolutePath().normalize();
+        // antes o parâmetro era ignorado e o caminho ficava fixo em ./data/empreendimentos
+        this.basePath = Paths.get(base).toAbsolutePath().normalize();
         try { Files.createDirectories(basePath); } catch (IOException ignored) {}
     }
 
     public EmpreendimentoDocumento armazenar(MultipartFile file, Long empreendimentoId, Long usuarioId) throws IOException {
-        if (file.isEmpty()) throw new IllegalArgumentException("Arquivo vazio: " + file.getOriginalFilename());
-        if (file.getSize() > 20 * 1024 * 1024) throw new IllegalArgumentException("Arquivo excede 20MB: " + file.getOriginalFilename());
+        if (file.isEmpty()) throw new IllegalArgumentException("O arquivo \"" + file.getOriginalFilename() + "\" está vazio. Verifique o arquivo e envie novamente.");
+        if (file.getSize() > 20 * 1024 * 1024) throw new IllegalArgumentException("O arquivo \"" + file.getOriginalFilename() + "\" tem " + String.format("%.1f", file.getSize() / (1024.0 * 1024.0)) + " MB e excede o limite de 20 MB por arquivo.");
         String original = file.getOriginalFilename() != null ? file.getOriginalFilename() : "arquivo";
         String ext = original.contains(".") ? original.substring(original.lastIndexOf('.')+1).toLowerCase() : "";
-        if (!ALLOWED_EXT.contains(ext)) throw new IllegalArgumentException("Formato não suportado: " + ext + " (" + original + ")");
+        if (!ALLOWED_EXT.contains(ext)) throw new IllegalArgumentException("O arquivo \"" + original + "\" não pode ser enviado porque o formato " + (ext.isEmpty() ? "(sem extensão)" : "." + ext) + " não é aceito. Envie PDF, Word (DOC/DOCX), planilha (XLS/XLSX/CSV) ou imagem (JPG/PNG).");
         String mime = file.getContentType();
         // mime pode ser null para alguns, permitir se extensão ok
         if (mime != null && !ALLOWED_MIMES.contains(mime.toLowerCase()) && !ext.equals("csv") && !mime.startsWith("image/")) {

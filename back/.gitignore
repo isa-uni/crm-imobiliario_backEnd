@@ -31,3 +31,9 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Artefatos locais de execução (não versionar) ###
+*.log
+diag_*.txt
+# uploads de documentos (crm.pdf-storage) e bancos H2 locais
+data/

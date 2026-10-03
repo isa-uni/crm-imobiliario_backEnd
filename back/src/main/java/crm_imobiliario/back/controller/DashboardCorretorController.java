@@ -31,6 +31,9 @@ public class DashboardCorretorController {
         String email = auth.getName();
         LocalDateTime ini;
         LocalDateTime fi;
+        if (inicio != null && fim != null && inicio.isAfter(fim)) {
+            throw new crm_imobiliario.back.util.RegraNegocioException("A data inicial deve ser igual ou anterior à data final.", "inicio", "INVALID_PERIOD");
+        }
         if (inicio != null && fim != null) {
             ini = inicio.atStartOfDay();
             fi = fim.atTime(LocalTime.MAX);

@@ -3,6 +3,7 @@ package crm_imobiliario.back.model.service;
 import java.time.LocalDate;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,6 +15,7 @@ import crm_imobiliario.back.model.entity.OrigemMeta;
 import crm_imobiliario.back.model.entity.Usuario;
 import crm_imobiliario.back.model.repository.MetaRepository;
 import crm_imobiliario.back.model.repository.UsuarioRepository;
+import crm_imobiliario.back.util.RecursoNaoEncontradoException;
 
 @Service
 public class MetaService {
@@ -23,10 +25,28 @@ public class MetaService {
     @Autowired
     private UsuarioRepository usuarioRepository;
 
+    /**
+     * Quem pode definir a meta de quem: corretor (e qualquer papel) define a própria; gestor também a
+     * dos seus subordinados diretos (usuario.gestor_id); admin a de qualquer usuário.
+     * Usada pelos dois endpoints de escrita (/metas e /dashboard/gestor/metas).
+     */
+    public void validarPermissao(Usuario solicitante, Long usuarioAlvoId) {
+        if (solicitante.getId().equals(usuarioAlvoId)) return;
+        String papel = solicitante.getPapel() != null ? solicitante.getPapel().getPapel() : "";
+        if ("admin".equals(papel)) return;
+        if ("gestor".equals(papel)) {
+            Usuario alvo = usuarioRepository.findById(usuarioAlvoId)
+                    .orElseThrow(() -> new RecursoNaoEncontradoException("O usuário selecionado para a meta não foi encontrado."));
+            if (alvo.getGestor() != null && alvo.getGestor().getId().equals(solicitante.getId())) return;
+            throw new AccessDeniedException("Você só pode definir metas para os corretores que você lidera.");
+        }
+        throw new AccessDeniedException("Você só pode definir a sua própria meta.");
+    }
+
     @Transactional
     public MetaDTO criarOuAtualizar(MetaCreateDTO dto, OrigemMeta origem) {
         Usuario usuario = usuarioRepository.findById(dto.getUsuarioId())
-                .orElseThrow(() -> new RuntimeException("Usuário não encontrado"));
+                .orElseThrow(() -> new RecursoNaoEncontradoException("O usuário selecionado para a meta não foi encontrado."));
         LocalDate ref = dto.getMesReferencia().withDayOfMonth(1);
         Meta meta = metaRepository.findByUsuarioIdAndMesReferenciaAndOrigem(dto.getUsuarioId(), ref, origem)
                 .orElse(new Meta());

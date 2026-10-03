@@ -24,7 +24,10 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 public class GuiaParserService {
 
-    private final ObjectMapper mapper = new ObjectMapper();
+    // o Guia tem mais campos do que o DTO espelha (ex.: "ativo"); sem isto o parse falhava inteiro e
+    // nenhum empreendimento do Guia era carregado — só os seeds fixos entravam no catálogo
+    private final ObjectMapper mapper = new ObjectMapper()
+            .configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
     private final Normalizer normalizer;
 
     public GuiaParserService(Normalizer normalizer) {

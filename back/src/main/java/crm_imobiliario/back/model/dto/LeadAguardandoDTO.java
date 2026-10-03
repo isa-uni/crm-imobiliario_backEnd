@@ -18,7 +18,9 @@ public record LeadAguardandoDTO(
         String motivoDesligamento,
         LocalDateTime dataDesligamento,
         String origem,
-        String status
+        String status,
+        Long responsavelRedistribuicaoId,
+        String responsavelRedistribuicaoNome
 ) {
     public static LeadAguardandoDTO from(Lead lead, crm_imobiliario.back.model.entity.LeadResponsavelHistorico ultimo, crm_imobiliario.back.model.entity.LeadResponsavelHistorico anterior) {
         Long equipeId = lead.getEquipe() != null ? lead.getEquipe().getId() : null;
@@ -55,7 +57,9 @@ public record LeadAguardandoDTO(
                 motivo,
                 dataDeslig,
                 lead.getOrigem(),
-                lead.getStatus()
+                lead.getStatus(),
+                lead.getResponsavelRedistribuicao() != null ? lead.getResponsavelRedistribuicao().getId() : null,
+                lead.getResponsavelRedistribuicao() != null ? lead.getResponsavelRedistribuicao().getNome() : null
         );
     }
 
@@ -66,7 +70,9 @@ public record LeadAguardandoDTO(
                 lead.getId(), lead.getNome(), lead.getEmail(), lead.getTelefone(),
                 equipeId, equipeNome, lead.getStatusAtribuicao(), lead.getDataAtualizacao(),
                 null, null, "DESLIGAMENTO_CORRETOR", lead.getDataAtualizacao(),
-                lead.getOrigem(), lead.getStatus()
+                lead.getOrigem(), lead.getStatus(),
+                lead.getResponsavelRedistribuicao() != null ? lead.getResponsavelRedistribuicao().getId() : null,
+                lead.getResponsavelRedistribuicao() != null ? lead.getResponsavelRedistribuicao().getNome() : null
         );
     }
 }

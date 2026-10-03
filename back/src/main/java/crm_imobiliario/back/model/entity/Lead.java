@@ -32,7 +32,8 @@ public class Lead {
     private Long id;
 
     private String nome;
-    @Column(unique = true)
+    // opcional e não-único (V5): leads costumam chegar só com telefone, e duas pessoas podem
+    // compartilhar um e-mail (ex.: casal comprando junto)
     private String email;
     private String telefone;
     private String origem;
@@ -63,5 +64,13 @@ public class Lead {
     @ManyToOne
     @JoinColumn(name = "empreendimento_id")
     private Empreendimento empreendimento;
+
+    /**
+     * Responsável por redistribuir este lead enquanto ele aguarda um novo corretor: o gestor do corretor
+     * inativado ou, se não houver gestor, o administrador que fez a inativação. Limpo ao redistribuir.
+     */
+    @ManyToOne
+    @JoinColumn(name = "responsavel_redistribuicao_id")
+    private Usuario responsavelRedistribuicao;
 
 }

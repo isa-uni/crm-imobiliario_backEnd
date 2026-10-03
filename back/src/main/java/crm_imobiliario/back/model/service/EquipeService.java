@@ -1,5 +1,9 @@
 package crm_imobiliario.back.model.service;
 
+import crm_imobiliario.back.util.RecursoNaoEncontradoException;
+import crm_imobiliario.back.util.RegraNegocioException;
+import org.springframework.security.access.AccessDeniedException;
+
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,21 +32,21 @@ public class EquipeService {
     }
 
     public Equipe buscarPorId(Long id) {
-        return equipeRepository.findById(id).orElseThrow(() -> new RuntimeException("Equipe não encontrada"));
+        return equipeRepository.findById(id).orElseThrow(() -> new RecursoNaoEncontradoException("A equipe solicitada não foi encontrada. Ela pode ter sido removida."));
     }
 
     @Transactional
     public Equipe criar(String nome, String descricao, Long gestorId) {
-        if (equipeRepository.findByNome(nome).isPresent()) throw new RuntimeException("Equipe já existe");
+        if (equipeRepository.findByNome(nome).isPresent()) throw new RegraNegocioException("Já existe uma equipe chamada \"" + nome + "\". Escolha outro nome.", "nome", "DUPLICATE_EQUIPE");
         Equipe e = Equipe.builder().nome(nome).descricao(descricao).ativo(true).build();
         if (gestorId != null) {
-            Usuario gestor = usuarioRepository.findById(gestorId).orElseThrow(() -> new RuntimeException("Gestor não encontrado"));
+            Usuario gestor = usuarioRepository.findById(gestorId).orElseThrow(() -> new RecursoNaoEncontradoException("O gestor selecionado não foi encontrado. Atualize a página e escolha outro."));
             validarGestor(gestor);
             e.setGestor(gestor);
         }
         Equipe salva = equipeRepository.save(e);
         if (gestorId != null) {
-            Usuario gestor = usuarioRepository.findById(gestorId).orElseThrow(() -> new RuntimeException("Gestor não encontrado"));
+            Usuario gestor = usuarioRepository.findById(gestorId).orElseThrow(() -> new RecursoNaoEncontradoException("O gestor selecionado não foi encontrado. Atualize a página e escolha outro."));
             // garante consistência do próprio gestor
             if (gestor.getEquipe() == null || !gestor.getEquipe().getId().equals(salva.getId())) {
                 gestor.setEquipe(salva);
@@ -57,15 +61,15 @@ public class EquipeService {
     public Equipe atribuirGestor(Long equipeId, Long novoGestorId, Usuario solicitante) {
         Equipe equipe = buscarPorId(equipeId);
         String papel = solicitante.getPapel() != null ? solicitante.getPapel().getPapel() : "";
-        if (!"admin".equals(papel)) throw new RuntimeException("Apenas admin pode alterar gestor de equipe");
+        if (!"admin".equals(papel)) throw new AccessDeniedException("Somente administradores podem alterar o gestor de uma equipe.");
         if (novoGestorId == null) {
             equipe.setGestor(null);
             Equipe salva = equipeRepository.save(equipe);
             return salva;
         } else {
-            Usuario novoGestor = usuarioRepository.findById(novoGestorId).orElseThrow(() -> new RuntimeException("Gestor não encontrado"));
+            Usuario novoGestor = usuarioRepository.findById(novoGestorId).orElseThrow(() -> new RecursoNaoEncontradoException("O gestor selecionado não foi encontrado. Atualize a página e escolha outro."));
             validarGestor(novoGestor);
-            if (!novoGestor.isAtivo()) throw new RuntimeException("Gestor inativo não pode assumir equipe");
+            if (!novoGestor.isAtivo()) throw new RegraNegocioException("Não é possível definir " + novoGestor.getNome() + " como gestor porque o usuário está inativo.", "gestorId", "GESTOR_INACTIVE");
             equipe.setGestor(novoGestor);
             if (novoGestor.getEquipe() == null || !novoGestor.getEquipe().getId().equals(equipe.getId())) {
                 novoGestor.setEquipe(equipe);
@@ -89,7 +93,7 @@ public class EquipeService {
     @Transactional
     public int sincronizarEquipe(Long equipeId) {
         Equipe equipe = buscarPorId(equipeId);
-        if (equipe.getGestor() == null) throw new RuntimeException("Equipe sem gestor, não há liderança para sincronizar");
+        if (equipe.getGestor() == null) throw new RegraNegocioException("Não é possível sincronizar a equipe " + equipe.getNome() + " porque ela não tem gestor. Defina um gestor antes de sincronizar.", null, "TEAM_WITHOUT_MANAGER");
         return sincronizarLiderados(equipe, equipe.getGestor().getId());
     }
 
@@ -119,6 +123,6 @@ public class EquipeService {
 
     private void validarGestor(Usuario u) {
         String papel = u.getPapel() != null ? u.getPapel().getPapel() : "";
-        if (!"gestor".equals(papel) && !"admin".equals(papel)) throw new RuntimeException("Usuário não é gestor");
+        if (!"gestor".equals(papel) && !"admin".equals(papel)) throw new RegraNegocioException(u.getNome() + " não pode liderar uma equipe porque tem o papel \"" + papel + "\". Somente gestores e administradores podem ser gestores de equipe.", "gestorId", "NOT_A_MANAGER");
     }
 }

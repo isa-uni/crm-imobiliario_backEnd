@@ -7,7 +7,6 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -25,7 +24,6 @@ import crm_imobiliario.back.model.dto.TramitacaoDTO;
 import crm_imobiliario.back.model.entity.Tramitacao;
 import crm_imobiliario.back.model.service.LeadExportService;
 import crm_imobiliario.back.model.service.LeadsService;
-import crm_imobiliario.back.util.DefaultResponse;
 import jakarta.validation.Valid;
 
 @RestController
@@ -96,16 +94,16 @@ public class LeadController {
         return ResponseEntity.noContent().build();
     }
 
-    @DeleteMapping("/deletar/{id}")
-    public ResponseEntity<?> deletar(@PathVariable Long id, org.springframework.security.core.Authentication authentication) {
-        leadService.deletarLead(id);
-        return ResponseEntity.ok(
-                DefaultResponse.construir(
-                        HttpStatus.OK.value(),
-                        "Lead deletado com sucesso",
-                        null));
+    /**
+     * Contadores dos cards da tela de Leads (total, ativos, contratos, este mês) sobre todos os leads
+     * do escopo do usuário. Não existe exclusão física de lead: o descarte/inativação preserva a
+     * tramitação e o histórico de responsáveis (que têm FK para o lead).
+     */
+    @GetMapping("/resumo")
+    public ResponseEntity<java.util.Map<String, Long>> resumo() {
+        return ResponseEntity.ok(leadService.resumo());
     }
-    
+
     @GetMapping("/metrics")
     public ResponseEntity<MetricsDTO> getMetrics(org.springframework.security.core.Authentication authentication) {
         return ResponseEntity.ok(leadService.getMetrics());

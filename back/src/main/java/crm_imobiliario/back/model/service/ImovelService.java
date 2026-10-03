@@ -1,5 +1,8 @@
 package crm_imobiliario.back.model.service;
 
+import crm_imobiliario.back.util.RecursoNaoEncontradoException;
+import crm_imobiliario.back.util.RegraNegocioException;
+
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,13 +40,13 @@ public class ImovelService {
             return imovelRepository.save(imovel);
 
         } catch (DataIntegrityViolationException e) {
-            throw new RuntimeException("imovel já cadastrado");
+            throw new RegraNegocioException("imovel já cadastrado");
         }
     }
 
     public Imovel atualizarimovel(Long id, ImovelAtualizacaoDTO dto) {
         Imovel imovel = imovelRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("imovel não encontrado"));
+                .orElseThrow(() -> new RecursoNaoEncontradoException("O imóvel solicitado não foi encontrado. Ele pode ter sido removido."));
 
             
         if (dto.getTitulo() != null) {
@@ -103,7 +106,7 @@ public class ImovelService {
 
     public void inativarImovel(Long id) {
         Imovel imovel = imovelRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Imóvel não encontrado"));
+                .orElseThrow(() -> new RecursoNaoEncontradoException("O imóvel solicitado não foi encontrado. Ele pode ter sido removido."));
 
         imovel.setAtivo(false);
 
@@ -112,7 +115,7 @@ public class ImovelService {
 
     public void ativarImovel(Long id) {
         Imovel imovel = imovelRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Imóvel não encontrado"));
+                .orElseThrow(() -> new RecursoNaoEncontradoException("O imóvel solicitado não foi encontrado. Ele pode ter sido removido."));
 
         imovel.setAtivo(true);
 

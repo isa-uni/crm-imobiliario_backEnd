@@ -61,7 +61,9 @@ public class CrmSyncService {
         }
     }
 
-    @Scheduled(fixedDelayString = "${crm.refresh-seg:21600}000")
+    // initialDelay: sem ele o fixedDelay dispara já no startup, ignorando crm.sync-no-startup=false
+    // (o seed no startup é feito por initNoStartup quando habilitado)
+    @Scheduled(fixedDelayString = "${crm.refresh-seg:21600}000", initialDelayString = "${crm.refresh-seg:21600}000")
     public void agendado() {
         log.info("CrmSyncService agendado disparado");
         syncCompleta();
@@ -124,17 +126,17 @@ public class CrmSyncService {
         List<Path> candidatosHtml = new ArrayList<>();
         if (envJson != null) candidatosJson.add(Paths.get(envJson));
         if (envHtml != null) candidatosHtml.add(Paths.get(envHtml));
-        // paths portáveis (relativos ao working dir / classpath)
+        // paths portáveis (relativos ao working dir); fora disso, use GUIA_JSON_PATH / GUIA_HTML_PATH
         candidatosJson.add(Paths.get("./guia-de-bolso_empreendimentos.json"));
         candidatosJson.add(Paths.get("./data/guia-de-bolso_empreendimentos.json"));
         candidatosJson.add(Paths.get("guia-de-bolso_empreendimentos.json"));
-        // mantém fallback legado Windows apenas para dev local, mas não quebra em Docker/Linux
-        candidatosJson.add(Paths.get("C:/Users/isabe/Desktop/imoveis/guia-de-bolso_empreendimentos.json"));
+        // raiz do workspace quando o backend roda a partir de crm-imobiliario_backEnd/back (dev local)
+        candidatosJson.add(Paths.get("../../guia-de-bolso_empreendimentos.json"));
 
         candidatosHtml.add(Paths.get("./guia-de-bolso.html"));
         candidatosHtml.add(Paths.get("./data/guia-de-bolso.html"));
         candidatosHtml.add(Paths.get("guia-de-bolso.html"));
-        candidatosHtml.add(Paths.get("C:/Users/isabe/Desktop/imoveis/guia-de-bolso.html"));
+        candidatosHtml.add(Paths.get("../../guia-de-bolso.html"));
 
         for (int i = 0; i < Math.min(candidatosJson.size(), candidatosHtml.size()); i++) {
             List<GuiaParserService.EmpreendimentoGuia> out = guiaParserService.carregar(candidatosJson.get(i), candidatosHtml.get(i));

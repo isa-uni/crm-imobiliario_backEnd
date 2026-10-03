@@ -35,11 +35,8 @@ public class EquipeController {
     }
 
     @PostMapping
-    public ResponseEntity<EquipeDTO> criar(@RequestBody @Valid EquipeCreateDTO dto, Authentication auth) {
-        // apenas admin
-        var solicitante = usuarioService.buscarPorEmail(auth.getName());
-        String papel = solicitante.getPapel() != null ? solicitante.getPapel().getPapel() : "";
-        if (!"admin".equals(papel)) return ResponseEntity.status(403).build();
+    public ResponseEntity<EquipeDTO> criar(@RequestBody @Valid EquipeCreateDTO dto) {
+        // apenas admin — garantido pelo SecurityFilterChain (/equipes/** exceto GET)
         Equipe e = equipeService.criar(dto.getNome(), dto.getDescricao(), dto.getGestorId());
         return ResponseEntity.ok(EquipeDTO.from(e));
     }
@@ -59,10 +56,8 @@ public class EquipeController {
     }
 
     @PutMapping("/{id}/sincronizar")
-    public ResponseEntity<java.util.Map<String,Object>> sincronizar(@PathVariable Long id, Authentication auth) {
-        var solicitante = usuarioService.buscarPorEmail(auth.getName());
-        String papel = solicitante.getPapel() != null ? solicitante.getPapel().getPapel() : "";
-        if (!"admin".equals(papel)) return ResponseEntity.status(403).build();
+    public ResponseEntity<java.util.Map<String,Object>> sincronizar(@PathVariable Long id) {
+        // apenas admin — garantido pelo SecurityFilterChain
         int migrados = equipeService.sincronizarEquipe(id);
         return ResponseEntity.ok(java.util.Map.of("migrados", migrados, "equipeId", id));
     }

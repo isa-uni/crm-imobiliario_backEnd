@@ -17,8 +17,8 @@ import org.springframework.web.bind.annotation.RestController;
 import crm_imobiliario.back.model.dto.LeadListaDTO;
 import crm_imobiliario.back.model.dto.LeadRedistribuicaoDTO;
 import crm_imobiliario.back.model.entity.LeadResponsavelHistorico;
-import crm_imobiliario.back.model.repository.LeadResponsavelHistoricoRepository;
 import crm_imobiliario.back.model.service.LeadAtribuicaoService;
+import crm_imobiliario.back.model.service.LeadsService;
 import crm_imobiliario.back.model.service.UsuarioService;
 import jakarta.validation.Valid;
 
@@ -31,7 +31,7 @@ public class LeadAtribuicaoController {
     @Autowired
     private UsuarioService usuarioService;
     @Autowired
-    private LeadResponsavelHistoricoRepository historicoRepository;
+    private LeadsService leadsService;
 
     @GetMapping("/aguardando-redistribuicao")
     public ResponseEntity<?> aguardando(
@@ -55,6 +55,16 @@ public class LeadAtribuicaoController {
         return ResponseEntity.ok(LeadListaDTO.from(lead));
     }
 
+    /** Atribuição em massa: todos os leads selecionados para um corretor, tudo ou nada. */
+    @PostMapping("/redistribuir-em-massa")
+    public ResponseEntity<?> redistribuirEmMassa(@RequestBody @Valid crm_imobiliario.back.model.dto.LeadRedistribuicaoMassaDTO dto, Authentication auth) {
+        var solicitante = usuarioService.buscarPorEmail(auth.getName());
+        var leads = atribuicaoService.redistribuirEmMassa(dto.getLeadIds(), dto.getNovoCorretorId(), solicitante);
+        return ResponseEntity.ok(Map.of(
+                "atribuidos", leads.size(),
+                "leads", leads.stream().map(LeadListaDTO::from).toList()));
+    }
+
     @PostMapping("/{id}/redistribuir/{novoCorretorId}")
     public ResponseEntity<?> redistribuirPath(@PathVariable Long id, @PathVariable Long novoCorretorId, Authentication auth) {
         var solicitante = usuarioService.buscarPorEmail(auth.getName());
@@ -64,8 +74,8 @@ public class LeadAtribuicaoController {
 
     @GetMapping("/{id}/historico-responsaveis")
     public ResponseEntity<List<Map<String,Object>>> historico(@PathVariable Long id, Authentication auth) {
-        // qualquer autenticado da equipe pode ver
-        List<LeadResponsavelHistorico> hist = historicoRepository.findByLeadIdOrderByDataInicioAsc(id);
+        // mesmo escopo do lead: admin tudo, gestor a equipe, corretor só os próprios (403 caso contrário)
+        List<LeadResponsavelHistorico> hist = leadsService.listarHistoricoResponsaveis(id);
         List<Map<String,Object>> resp = hist.stream().map(h -> {
             Map<String,Object> m = new java.util.HashMap<>();
             m.put("id", h.getId());

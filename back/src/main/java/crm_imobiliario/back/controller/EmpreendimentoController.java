@@ -170,7 +170,7 @@ public class EmpreendimentoController {
 
         Map<String, Object> resp = new HashMap<>();
         resp.put("status", "em_processamento");
-        resp.put("mensagem", alvo != null ? "Sync do empreendimento " + alvo + " enfileirado" : "Sync completa enfileirada");
+        resp.put("message", alvo != null ? "A sincronização do empreendimento " + alvo + " foi iniciada e roda em segundo plano." : "A sincronização do catálogo foi iniciada e roda em segundo plano.");
         resp.put("emBuild", true);
         return ResponseEntity.accepted().body(resp);
     }

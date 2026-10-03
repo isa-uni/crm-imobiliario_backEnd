@@ -41,7 +41,7 @@ public class EmpreendimentoIaController {
         var user = usuarioService.buscarPorEmail(auth.getName());
         String papel = user.getPapel()!=null?user.getPapel().getPapel():"";
         if (!"admin".equals(papel) && !"gestor".equals(papel)) {
-            throw new org.springframework.security.access.AccessDeniedException("Apenas admin/gestor pode executar esta ação");
+            throw new org.springframework.security.access.AccessDeniedException("Somente administradores e gestores podem importar ou alterar empreendimentos.");
         }
     }
 
@@ -50,8 +50,8 @@ public class EmpreendimentoIaController {
                                     @RequestParam(value = "empreendimentoId", required = false) Long empreendimentoId,
                                     Authentication auth) throws Exception {
         exigirAdminGestor(auth);
-        if (files == null || files.isEmpty()) throw new IllegalArgumentException("Nenhum arquivo enviado");
-        if (files.size() > 5) throw new IllegalArgumentException("Máximo 5 arquivos");
+        if (files == null || files.isEmpty()) throw new IllegalArgumentException("Selecione pelo menos um arquivo para enviar.");
+        if (files.size() > 5) throw new IllegalArgumentException("Envie no máximo 5 arquivos por vez. Você selecionou " + files.size() + ".");
         Long uid = usuarioId(auth);
         List<EmpreendimentoDocumento> docs = new java.util.ArrayList<>();
         for (MultipartFile f : files) {
@@ -67,7 +67,7 @@ public class EmpreendimentoIaController {
     public ResponseEntity<?> extrair(@RequestBody Map<String, List<Long>> body, Authentication auth) {
         exigirAdminGestor(auth);
         List<Long> ids = body.get("documentoIds");
-        if (ids == null || ids.isEmpty()) throw new IllegalArgumentException("documentoIds obrigatório");
+        if (ids == null || ids.isEmpty()) throw new IllegalArgumentException("Informe os documentos que devem ser processados.");
         Long uid = usuarioId(auth);
         EmpreendimentoExtracao extracao = extracaoService.criarExtracao(ids, uid, null);
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(Map.of("extracaoId", extracao.getId(), "status", extracao.getStatus()));

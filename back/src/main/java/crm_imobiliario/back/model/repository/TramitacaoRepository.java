@@ -15,6 +15,9 @@ public interface TramitacaoRepository extends JpaRepository<Tramitacao, Long> {
 
     List<Tramitacao> findByLeadIdOrderByDataMovimentacaoAsc(Long leadId);
 
+    /** Tramitações de vários leads numa consulta só (evita N+1 no dashboard do gestor). */
+    List<Tramitacao> findByLeadIdInOrderByDataMovimentacaoAsc(java.util.Collection<Long> leadIds);
+
     @Query(value = "SELECT TO_CHAR(t.data_movimentacao, 'YYYY-MM') as mes, COUNT(DISTINCT t.lead_id) FROM tramitacao_status t JOIN lead l ON l.id = t.lead_id WHERE l.corretor_id = :corretorId AND t.status_atual = 'contrato' AND t.data_movimentacao >= :inicio AND t.data_movimentacao <= :fim GROUP BY mes ORDER BY mes", nativeQuery = true)
     List<Object[]> contarContratosPorMes(@Param("corretorId") Long corretorId, @Param("inicio") LocalDateTime inicio, @Param("fim") LocalDateTime fim);
 }

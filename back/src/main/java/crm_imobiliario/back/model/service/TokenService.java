@@ -24,6 +24,21 @@ public class TokenService {
     @Value("${api.security.token.refresh-expiration:604800000}")
     private long refreshExpiration;
 
+    private static final String SEGREDO_DEV = "minha-chave-dev-apenas-para-desenvolvimento";
+
+    /** Avisa no startup quando o segredo de desenvolvimento (público no repositório) está em uso. */
+    @jakarta.annotation.PostConstruct
+    void verificarSegredo() {
+        if (secret == null || secret.getBytes().length < 32) {
+            throw new IllegalStateException("api.security.token.secret (JWT_SECRET) precisa ter ao menos 32 bytes para HS256");
+        }
+        if (secret.startsWith(SEGREDO_DEV)) {
+            org.slf4j.LoggerFactory.getLogger(TokenService.class).warn(
+                    "JWT_SECRET não definido: usando o segredo de desenvolvimento. Defina JWT_SECRET em produção — "
+                    + "com o segredo padrão qualquer pessoa consegue forjar tokens.");
+        }
+    }
+
     public record TokenPair(String accessToken, String refreshToken, String accessJti, String refreshJti) {}
 
     public TokenPair gerarTokens(Usuario usuario) {

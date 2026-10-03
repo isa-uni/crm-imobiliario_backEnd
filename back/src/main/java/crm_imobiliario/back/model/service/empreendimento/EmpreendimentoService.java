@@ -91,6 +91,12 @@ public class EmpreendimentoService {
         }
         if (existente.isPresent()) {
             Empreendimento e = existente.get();
+            // registros confirmados por um usuário (importação/revisão) são a fonte de verdade: o seed
+            // do catálogo (com disponibilidade e preços de semente) não pode sobrescrevê-los
+            if (e.getCriadoPor() != null) {
+                log.debug("Sync ignorou {}: empreendimento confirmado manualmente (criadoPor={})", e.getNome(), e.getCriadoPor());
+                return e;
+            }
             // merge campos não-nulos
             merge(e, emp);
             e.setUltimaSincronizacao(Instant.now());

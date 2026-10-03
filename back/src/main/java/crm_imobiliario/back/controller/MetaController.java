@@ -18,7 +18,6 @@ import crm_imobiliario.back.model.dto.MetaDTO;
 import crm_imobiliario.back.model.dto.MetaResumoDTO;
 import crm_imobiliario.back.model.entity.OrigemMeta;
 import crm_imobiliario.back.model.entity.Usuario;
-import crm_imobiliario.back.model.repository.UsuarioRepository;
 import crm_imobiliario.back.model.service.MetaService;
 import crm_imobiliario.back.model.service.UsuarioService;
 import jakarta.validation.Valid;
@@ -31,8 +30,6 @@ public class MetaController {
     private MetaService metaService;
     @Autowired
     private UsuarioService usuarioService;
-    @Autowired
-    private UsuarioRepository usuarioRepository;
 
     /**
      * Busca a meta própria e a meta atribuída pelo gestor do usuário autenticado para um mês
@@ -56,24 +53,8 @@ public class MetaController {
     @PostMapping
     public ResponseEntity<?> criarOuAtualizar(@RequestBody @Valid MetaCreateDTO dto, Authentication auth) {
         Usuario solicitante = usuarioService.buscarPorEmail(auth.getName());
-        String papel = solicitante.getPapel() != null ? solicitante.getPapel().getPapel() : "";
-
-        // corretor só pode mexer na própria meta
-        if (!"gestor".equals(papel) && !"admin".equals(papel)) {
-            if (!solicitante.getId().equals(dto.getUsuarioId())) {
-                return ResponseEntity.status(403).body(java.util.Map.of("error", "Sem permissão para editar meta de outro usuário"));
-            }
-        } else {
-            // gestor só pode editar metas da própria equipe (ou dele mesmo)
-            if ("gestor".equals(papel) && !solicitante.getId().equals(dto.getUsuarioId())) {
-                Usuario alvo = usuarioRepository.findById(dto.getUsuarioId()).orElse(null);
-                if (alvo == null || alvo.getGestor() == null || !alvo.getGestor().getId().equals(solicitante.getId())) {
-                    // permite se alvo não tem gestor mas é da equipe? bloqueia por segurança
-                    // admin passa direto, gestor só equipe
-                    return ResponseEntity.status(403).body(java.util.Map.of("error", "Gestor só pode editar metas da própria equipe"));
-                }
-            }
-        }
+        // corretor: só a própria; gestor: a própria e a dos subordinados; admin: qualquer (403 se não puder)
+        metaService.validarPermissao(solicitante, dto.getUsuarioId());
 
         // definindo a própria meta (mesmo sendo gestor/admin) = origem CORRETOR; definindo para outro usuário = origem GESTOR
         OrigemMeta origem = solicitante.getId().equals(dto.getUsuarioId()) ? OrigemMeta.CORRETOR : OrigemMeta.GESTOR;

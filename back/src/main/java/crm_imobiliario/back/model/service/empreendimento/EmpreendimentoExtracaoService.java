@@ -1,10 +1,12 @@
 package crm_imobiliario.back.model.service.empreendimento;
 
+import crm_imobiliario.back.util.RecursoNaoEncontradoException;
+
 import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
 
-import org.springframework.scheduling.annotation.Async;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,13 +29,20 @@ public class EmpreendimentoExtracaoService {
     private final EmpreendimentoExtracaoDocumentoRepository extracaoDocumentoRepository;
     private final crm_imobiliario.back.model.service.empreendimento.extracao.DocumentExtractionOrchestrator extractionOrchestrator;
     private final ObjectMapper objectMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public EmpreendimentoExtracao criarExtracao(List<Long> documentoIds, Long usuarioId, Long empreendimentoId) {
-        if (documentoIds == null || documentoIds.isEmpty()) throw new IllegalArgumentException("Nenhum documento informado");
-        if (documentoIds.size() > 5) throw new IllegalArgumentException("Máximo 5 arquivos");
+        if (documentoIds == null || documentoIds.isEmpty()) throw new IllegalArgumentException("Selecione pelo menos um documento para iniciar a extração.");
+        if (documentoIds.size() > 5) throw new IllegalArgumentException("Envie no máximo 5 documentos por extração. Foram informados " + documentoIds.size() + ".");
         List<EmpreendimentoDocumento> docs = documentoRepository.findAllById(documentoIds);
-        if (docs.size() != documentoIds.size()) throw new RuntimeException("Algum documento não encontrado");
+        if (docs.size() != documentoIds.size()) {
+            Set<Long> encontrados = docs.stream().map(EmpreendimentoDocumento::getId).collect(Collectors.toSet());
+            List<Long> faltando = documentoIds.stream().filter(id -> !encontrados.contains(id)).toList();
+            throw new RecursoNaoEncontradoException("Não foi possível iniciar a extração porque "
+                + (faltando.size() == 1 ? "o documento " + faltando.get(0) + " não foi encontrado." : "os documentos " + faltando + " não foram encontrados.")
+                + " Envie os arquivos novamente.");
+        }
 
         EmpreendimentoExtracao extracao = EmpreendimentoExtracao.builder()
             .empreendimentoId(empreendimentoId)
@@ -51,14 +60,22 @@ public class EmpreendimentoExtracaoService {
             // atualiza status doc
             documentoRepository.findById(docId).ifPresent(d -> { d.setStatusProcessamento("processando"); documentoRepository.save(d); });
         }
-        // dispara async
-        processarAsync(extracao.getId());
+        // processamento em segundo plano, depois do commit (ver ExtracaoAsyncListener)
+        eventPublisher.publishEvent(new ExtracaoSolicitadaEvent(extracao.getId()));
         return extracao;
     }
 
-    @Async
+    /** Evento publicado ao criar/reprocessar uma extração; consumido após o commit. */
+    public record ExtracaoSolicitadaEvent(Long extracaoId) {}
+
+    /**
+     * Executa a extração. Não é chamado diretamente por este bean: antes, criarExtracao chamava
+     * this.processarAsync(...), e como @Async/@Transactional funcionam por proxy, a chamada interna
+     * rodava de forma síncrona dentro da requisição de upload. Agora o ExtracaoAsyncListener (outro
+     * bean, em thread do TaskExecutor) chama este método através do proxy.
+     */
     @Transactional
-    public void processarAsync(Long extracaoId) {
+    public void processar(Long extracaoId) {
         EmpreendimentoExtracao extracao = extracaoRepository.findById(extracaoId).orElse(null);
         if (extracao == null) return;
         try {
@@ -135,7 +152,7 @@ public class EmpreendimentoExtracaoService {
 
     @Transactional(readOnly = true)
     public EmpreendimentoExtracaoDTO obter(Long id) {
-        EmpreendimentoExtracao e = extracaoRepository.findById(id).orElseThrow(() -> new RuntimeException("Extração não encontrada"));
+        EmpreendimentoExtracao e = extracaoRepository.findById(id).orElseThrow(() -> new RecursoNaoEncontradoException("A extração solicitada não foi encontrada. Envie os documentos novamente."));
         List<Long> docIds = extracaoDocumentoRepository.findByExtracaoId(id).stream()
             .map(EmpreendimentoExtracaoDocumento::getDocumentoId).toList();
         List<EmpreendimentoFonte> fontes = fonteRepository.findByExtracaoId(id);
@@ -169,12 +186,12 @@ public class EmpreendimentoExtracaoService {
 
     @Transactional
     public EmpreendimentoExtracao reprocessar(Long id) {
-        EmpreendimentoExtracao e = extracaoRepository.findById(id).orElseThrow(() -> new RuntimeException("Extração não encontrada"));
+        EmpreendimentoExtracao e = extracaoRepository.findById(id).orElseThrow(() -> new RecursoNaoEncontradoException("A extração solicitada não foi encontrada. Envie os documentos novamente."));
         e.setStatus("pendente");
         e.setErro(null);
         e.setDataProcessamento(Instant.now());
         extracaoRepository.save(e);
-        processarAsync(id);
+        eventPublisher.publishEvent(new ExtracaoSolicitadaEvent(id));
         return e;
     }
 

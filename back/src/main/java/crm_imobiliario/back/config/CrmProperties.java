@@ -24,12 +24,9 @@ public class CrmProperties {
     /** Timeout de espera do detalhe sob demanda */
     private long esperaSeg = 300;
 
-    /** CORS origin */
-    private String corsOrigem = "*";
-
     /** Habilita sync automático no startup */
     private boolean syncNoStartup = true;
 
-    /** Pasta para cache de PDFs */
-    private String pdfStorage = "./data/pdfs";
+    /** Pasta onde os documentos enviados (upload de empreendimentos) são gravados */
+    private String pdfStorage = "./data/empreendimentos";
 }

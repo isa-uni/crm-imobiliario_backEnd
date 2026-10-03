@@ -7,7 +7,9 @@ import crm_imobiliario.back.model.entity.Notificacao;
 public record NotificacaoDTO(
         Long id,
         String tipo,
+        String titulo,
         String mensagem,
+        String link,
         Long leadId,
         String leadNome,
         Boolean lida,
@@ -17,7 +19,9 @@ public record NotificacaoDTO(
         return new NotificacaoDTO(
                 n.getId(),
                 n.getTipo(),
+                n.getTitulo(),
                 n.getMensagem(),
+                n.getLink(),
                 n.getLeadId(),
                 n.getLeadNome(),
                 n.getLida(),

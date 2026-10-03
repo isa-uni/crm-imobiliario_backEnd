@@ -7,8 +7,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.web.MockMultipartFile;
 
 import crm_imobiliario.back.model.entity.EmpreendimentoDocumento;
@@ -19,12 +20,14 @@ import crm_imobiliario.back.model.service.empreendimento.EmpreendimentoStorageSe
 class EmpreendimentoStorageServiceTest {
 
     private final EmpreendimentoDocumentoRepository repository = mock(EmpreendimentoDocumentoRepository.class);
-    private final EmpreendimentoStorageService service = new EmpreendimentoStorageService(repository, "./data/pdfs");
-    private Path arquivoCriado;
+    private EmpreendimentoStorageService service;
 
-    @AfterEach
-    void limpar() throws Exception {
-        if (arquivoCriado != null) Files.deleteIfExists(arquivoCriado);
+    @TempDir
+    Path pastaArmazenamento;
+
+    @BeforeEach
+    void setUp() {
+        service = new EmpreendimentoStorageService(repository, pastaArmazenamento.toString());
     }
 
     @Test
@@ -54,7 +57,7 @@ class EmpreendimentoStorageServiceTest {
         MockMultipartFile file = new MockMultipartFile("files", "tabela.pdf", "application/pdf", conteudo);
 
         EmpreendimentoDocumento doc = service.armazenar(file, null, 1L);
-        arquivoCriado = Path.of(doc.getCaminho());
+        Path arquivoCriado = Path.of(doc.getCaminho());
 
         assertEquals("tabela.pdf", doc.getNomeOriginal());
         assertEquals("pdf", doc.getTipo());
@@ -62,6 +65,8 @@ class EmpreendimentoStorageServiceTest {
         assertEquals("pendente", doc.getStatusProcessamento());
         assertNotNull(doc.getHash());
         assertTrue(Files.exists(arquivoCriado));
+        // respeita a pasta configurada (crm.pdf-storage) em vez de um caminho fixo
+        assertTrue(arquivoCriado.startsWith(pastaArmazenamento.toAbsolutePath().normalize()));
         verify(repository).save(any(EmpreendimentoDocumento.class));
     }
 }

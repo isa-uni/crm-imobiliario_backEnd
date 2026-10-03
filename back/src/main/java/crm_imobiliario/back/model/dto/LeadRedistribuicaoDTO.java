@@ -11,8 +11,8 @@ import lombok.Setter;
 @Getter
 @Setter
 public class LeadRedistribuicaoDTO {
-    @NotNull
+    @NotNull(message = "Informe o lead a ser redistribuído.")
     private Long leadId;
-    @NotNull
+    @NotNull(message = "Selecione o novo corretor responsável.")
     private Long novoCorretorId;
 }

@@ -14,10 +14,10 @@ import lombok.Setter;
 @Getter
 @Setter
 public class MetaCreateDTO {
-    @NotNull
+    @NotNull(message = "Selecione o usuário da meta.")
     private Long usuarioId;
-    @NotNull
+    @NotNull(message = "Informe o mês de referência da meta.")
     private LocalDate mesReferencia;
-    @NotNull @Min(0)
+    @NotNull(message = "Informe a quantidade de contratos da meta.") @Min(value = 0, message = "A meta de contratos não pode ser negativa.")
     private Integer metaContratos;
 }

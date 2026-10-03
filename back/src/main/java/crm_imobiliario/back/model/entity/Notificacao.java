@@ -32,10 +32,18 @@ public class Notificacao {
     private Usuario usuario;
 
     @Column(nullable = false)
-    private String tipo; // CLIENTE_REMOVIDO, CLIENTE_RECEBIDO
+    private String tipo; // CLIENTE_REMOVIDO, CLIENTE_RECEBIDO, LEADS_RECEBIDOS, REDISTRIBUICAO_PENDENTE
 
     @Column(nullable = false)
     private String mensagem;
+
+    /** Resumo do que aconteceu, exibido em destaque no sino e usado como assunto do e-mail. */
+    @Column(length = 150)
+    private String titulo;
+
+    /** Tela onde está a ação esperada (ex.: /redistribuicao). */
+    @Column(length = 255)
+    private String link;
 
     @Column(name = "lead_id")
     private Long leadId;
