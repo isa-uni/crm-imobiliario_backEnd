@@ -11,8 +11,6 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-import crm_imobiliario.back.model.dto.ImovelAtualizacaoDTO;
-import crm_imobiliario.back.model.dto.ImovelDTO;
 import crm_imobiliario.back.model.dto.LeadAtualizacaoDTO;
 import crm_imobiliario.back.model.dto.LeadsDTO;
 import crm_imobiliario.back.model.dto.PerfilDTO;
@@ -144,21 +142,5 @@ class ValidacaoCamposTest {
     void observacao_acima_do_limite_do_banco_e_recusada() {
         LeadAtualizacaoDTO dto = new LeadAtualizacaoDTO(null, null, null, null, null, null, null, null, null, "x".repeat(256), null);
         assertThat(erros(dto).get("observacao")).containsExactly("As observações devem ter no máximo 255 caracteres.");
-    }
-
-    // ------------------------------------------------------------------ imóvel
-
-    @Test
-    void imovel_valor_de_venda_deve_ser_maior_que_zero_e_contagens_nao_negativas() {
-        ImovelDTO dto = new ImovelDTO("Casa", "disponivel", "Rua A", "Centro", "Londrina", null, 0L, -1L, 0L, 0L, 50L);
-        Map<String, Set<String>> e = erros(dto);
-        assertThat(e.get("valorVenda")).containsExactly("Informe um valor de venda maior que zero.");
-        assertThat(e).containsKey("quartos");
-    }
-
-    @Test
-    void imovel_status_fora_da_lista_e_recusado_tambem_na_edicao() {
-        ImovelAtualizacaoDTO dto = new ImovelAtualizacaoDTO(null, "alugado", null, null, null, null, null, null, null, null, null);
-        assertThat(erros(dto)).containsKey("status");
     }
 }

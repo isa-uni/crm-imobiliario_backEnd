@@ -136,7 +136,7 @@ public class GlobalExceptionHandlerTest {
 
     @Test
     void handleGeneric_shouldReturn500WithRequestId() {
-        request.setRequestURI("/imovel");
+        request.setRequestURI("/leads");
         Exception ex = new Exception("NPE inesperado");
         ResponseEntity<ApiErrorResponse> resp = handler.handleGeneric(ex, request);
         assertEquals(500, resp.getStatusCode().value());
