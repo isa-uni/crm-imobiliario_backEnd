@@ -4,6 +4,8 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -15,6 +17,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import crm_imobiliario.back.model.dto.NovaSenhaDTO;
@@ -63,10 +66,49 @@ public class UsuarioController {
                 "senhaTemporaria", criado.senhaTemporaria()));
     }
 
+    /**
+     * Com page/size devolve uma página (Page: content, totalElements, totalPages, number, size) com busca,
+     * papel e status aplicados no banco. Sem page/size devolve a lista completa — compatível com as telas
+     * que só precisam de um seletor (Equipes, Redistribuição); `papel` (ex.: "gestor,admin") restringe a lista.
+     */
     @GetMapping
-    public ResponseEntity<List<UsuarioResponse>> getUsuarios() {
-        List<UsuarioResponse> usuarios = usuarioService.ConsultarUsuarios();
-        return ResponseEntity.ok(usuarios);
+    public ResponseEntity<?> getUsuarios(
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false) String sort,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false) String papel,
+            @RequestParam(required = false) String status) {
+        if (page == null && size == null) {
+            List<UsuarioResponse> usuarios = papel == null
+                    ? usuarioService.ConsultarUsuarios()
+                    : usuarioService.consultarUsuarios(papel);
+            return ResponseEntity.ok(usuarios);
+        }
+        int p = Math.max(0, page != null ? page : 0);
+        int s = size != null ? Math.min(Math.max(1, size), 100) : 20;
+        Page<UsuarioResponse> pg = usuarioService.listarPaginado(p, s, parseSort(sort), search, papel, status);
+        return ResponseEntity.ok(pg);
+    }
+
+    /** Contadores dos cards (total, ativos, inativos) e quantidade por papel, sobre todos os usuários. */
+    @GetMapping("/resumo")
+    public ResponseEntity<Map<String, Object>> resumo() {
+        return ResponseEntity.ok(usuarioService.resumo());
+    }
+
+    private Sort parseSort(String sort) {
+        // id como desempate: sem ele, usuários com o mesmo nome podem repetir/sumir entre as páginas
+        if (sort == null || sort.isBlank()) return Sort.by("nome").and(Sort.by("id"));
+        String[] parts = sort.split(",");
+        String field = parts[0].trim();
+        Sort.Direction dir = parts.length > 1 && parts[1].equalsIgnoreCase("desc") ? Sort.Direction.DESC : Sort.Direction.ASC;
+        // whitelist para evitar PropertyReferenceException
+        if (!List.of("id", "nome", "email", "matricula", "ativo").contains(field)) {
+            field = "nome";
+            dir = Sort.Direction.ASC;
+        }
+        return Sort.by(dir, field).and(Sort.by("id"));
     }
 
     @GetMapping("/{id}")

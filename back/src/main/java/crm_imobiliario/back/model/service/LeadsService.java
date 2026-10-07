@@ -421,6 +421,7 @@ public class LeadsService {
         return java.util.Map.of(
                 "total", leadRepository.count(escopo),
                 "ativos", leadRepository.count(escopo.and(specStatus("active"))),
+                "arquivados", leadRepository.count(escopo.and(specStatus("archived"))),
                 "contratos", leadRepository.count(escopo.and(specStatus("contrato"))),
                 "esteMes", leadRepository.count(escopo.and(specMonth("current"))));
     }

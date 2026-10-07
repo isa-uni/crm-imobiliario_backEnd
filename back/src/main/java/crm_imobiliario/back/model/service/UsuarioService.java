@@ -2,10 +2,16 @@ package crm_imobiliario.back.model.service;
 
 import java.security.SecureRandom;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -143,6 +149,65 @@ public class UsuarioService {
         return usuarioRepository.findAll().stream()
                 .map(UsuarioResponse::from)
                 .toList();
+    }
+
+    /** Lista completa (sem paginação) filtrada por papel — ex.: gestores/admins para os seletores de gestor. */
+    public List<UsuarioResponse> consultarUsuarios(String papel) {
+        return usuarioRepository.findAll(specPapel(papel), Sort.by("nome")).stream()
+                .map(UsuarioResponse::from)
+                .toList();
+    }
+
+    /** Tela de Usuários: busca (nome, e-mail, matrícula), papel e status aplicados no banco, uma página por vez. */
+    public Page<UsuarioResponse> listarPaginado(int page, int size, Sort sort, String search, String papel, String status) {
+        int p = Math.max(0, page);
+        int s = Math.min(Math.max(1, size), 100);
+        Specification<Usuario> spec = Specification.where(specSearch(search))
+                .and(specPapel(papel))
+                .and(specStatus(status));
+        PageRequest pr = PageRequest.of(p, s, sort);
+        return usuarioRepository.findAll(spec, pr).map(UsuarioResponse::from);
+    }
+
+    /** Contadores da tela de Usuários sobre todos os usuários (não só a página visível). */
+    public Map<String, Object> resumo() {
+        Map<String, Long> porPapel = new LinkedHashMap<>();
+        for (Object[] linha : usuarioRepository.contarPorPapel()) porPapel.put((String) linha[0], (Long) linha[1]);
+        return Map.of(
+                "total", usuarioRepository.count(),
+                "ativos", usuarioRepository.countByAtivo(true),
+                "inativos", usuarioRepository.countByAtivo(false),
+                "porPapel", porPapel);
+    }
+
+    private Specification<Usuario> specSearch(String search) {
+        return (root, query, cb) -> {
+            if (search == null || search.isBlank()) return cb.conjunction();
+            String q = "%" + search.trim().toLowerCase() + "%";
+            return cb.or(
+                    cb.like(cb.lower(root.get("nome")), q),
+                    cb.like(cb.lower(root.get("email")), q),
+                    cb.like(cb.lower(root.get("matricula")), q));
+        };
+    }
+
+    /** Um papel ou vários separados por vírgula ("gestor,admin"); vazio/"all" não filtra. */
+    private Specification<Usuario> specPapel(String papel) {
+        return (root, query, cb) -> {
+            if (papel == null || papel.isBlank() || "all".equalsIgnoreCase(papel)) return cb.conjunction();
+            List<String> papeis = java.util.Arrays.stream(papel.split(","))
+                    .map(String::trim).filter(x -> !x.isEmpty()).map(String::toLowerCase).toList();
+            if (papeis.isEmpty()) return cb.conjunction();
+            return cb.lower(root.join("papel").get("papel")).in(papeis);
+        };
+    }
+
+    private Specification<Usuario> specStatus(String status) {
+        return (root, query, cb) -> {
+            if ("ativos".equalsIgnoreCase(status)) return cb.isTrue(root.get("ativo"));
+            if ("inativos".equalsIgnoreCase(status)) return cb.isFalse(root.get("ativo"));
+            return cb.conjunction();
+        };
     }
 
     public Usuario buscarPorEmail(String email) {
