@@ -296,10 +296,13 @@ public class LeadsService {
     private Specification<Lead> specSearch(String search) {
         return (root, query, cb) -> {
             if (search == null || search.isBlank()) return cb.conjunction();
-            String q = "%" + search.toLowerCase() + "%";
+            String q = "%" + search.trim().toLowerCase() + "%";
             Predicate nome = cb.like(cb.lower(root.get("nome")), q);
             Predicate email = cb.like(cb.lower(root.get("email")), q);
-            Predicate telefone = cb.like(root.get("telefone"), "%" + search + "%");
+            // telefone é gravado só com dígitos: "(43) 9840-1" procura por "4398401"
+            String digitos = search.replaceAll("\\D", "");
+            if (digitos.isEmpty()) return cb.or(nome, email);
+            Predicate telefone = cb.like(root.get("telefone"), "%" + digitos + "%");
             return cb.or(nome, email, telefone);
         };
     }

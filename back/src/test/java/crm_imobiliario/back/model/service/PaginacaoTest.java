@@ -198,4 +198,26 @@ class PaginacaoTest {
                 .andExpect(jsonPath("$.ativos").value(4))
                 .andExpect(jsonPath("$.arquivados").value(2));
     }
+
+    @Test
+    void leads_buscaPorNomeTelefoneEEmail() throws Exception {
+        Usuario corretor = usuario("corretor", "Corretor Busca Leads", true);
+        Lead maria = lead(corretor, "Maria Buscável", "lead");
+        maria.setTelefone("43984011094");
+        maria.setEmail("maria.busca@exemplo.com");
+        leadRepository.save(maria);
+        lead(corretor, "Outro Cliente", "lead");
+
+        for (String termo : new String[] { "buscÁvel", "(43) 98401-1094", "4011094", "MARIA.BUSCA@" }) {
+            mockMvc.perform(get("/leads").param("page", "0").param("size", "10").param("search", termo)
+                            .header("Authorization", bearer(corretor)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.totalElements").value(1))
+                    .andExpect(jsonPath("$.content[0].nome").value("Maria Buscável"));
+        }
+        // texto sem dígitos não casa com qualquer telefone
+        mockMvc.perform(get("/leads").param("page", "0").param("size", "10").param("search", "zzz")
+                        .header("Authorization", bearer(corretor)))
+                .andExpect(jsonPath("$.totalElements").value(0));
+    }
 }
