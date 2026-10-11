@@ -11,7 +11,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.TreeMap;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -109,7 +108,7 @@ public class DashboardGestorService {
         dto.setPipeline(calcularPipeline(atual));
         dto.setRankingCorretores(calcularRanking(atual, equipe, tramitacoes, idPorNome));
         dto.setMetas(calcularMetas(equipe, atual.contratos().stream().map(Avaliado::lead).toList(), mes.atDay(1).atStartOfDay()));
-        dto.setTempoMedio(calcularTempoMedio(atual, base, tramitacoes, idPorNome));
+        dto.setTempoMedio(calcularTempoMedio(atual, idPorNome));
         dto.setOrigens(calcularOrigens(atual));
         dto.setHistorico(calcularHistorico(atual));
         dto.setEmpreendimentosMaisProcurados(calcularEmpreendimentos(atual));
@@ -367,8 +366,7 @@ public class DashboardGestorService {
                 .orElseGet(() -> metas.stream().filter(m -> m.getOrigem() == OrigemMeta.GESTOR).findFirst().orElse(null));
     }
 
-    private DashboardGestorDTO.TempoMedioDTO calcularTempoMedio(Mes atual, List<Lead> base, Map<Long, List<Tramitacao>> tramitacoes,
-                                                                Map<String, Long> idPorNome) {
+    private DashboardGestorDTO.TempoMedioDTO calcularTempoMedio(Mes atual, Map<String, Long> idPorNome) {
         List<Avaliado> contratos = atual.contratos();
 
         // por corretor, sobre os contratos fechados no mês
@@ -391,29 +389,8 @@ public class DashboardGestorService {
                     .totalNegocios(e.getValue().size()).build());
         }
 
-        // evolução: média dos contratos agrupada pelo mês de FECHAMENTO, nos 6 meses até o mês escolhido
-        YearMonth primeiro = atual.mes().minusMonths(5);
-        Map<String, List<Long>> porMes = new TreeMap<>();
-        for (Lead l : base) {
-            if (l.getDataCriacao() == null) continue;
-            LocalDateTime fechou = null;
-            for (Tramitacao t : tramitacoes.getOrDefault(l.getId(), List.of())) {
-                if ("contrato".equals(t.getStatus_atual()) && t.getDataMovimentacao() != null && !t.getDataMovimentacao().isAfter(atual.ref())) {
-                    fechou = t.getDataMovimentacao();
-                }
-            }
-            if (fechou == null) continue;
-            YearMonth ym = YearMonth.from(fechou);
-            if (ym.isBefore(primeiro) || ym.isAfter(atual.mes())) continue;
-            porMes.computeIfAbsent(ym.toString(), k -> new ArrayList<>())
-                    .add(Math.max(0, ChronoUnit.DAYS.between(l.getDataCriacao(), fechou)));
-        }
-        List<DashboardGestorDTO.TempoEvolucaoDTO> evol = porMes.entrySet().stream()
-                .map(e -> new DashboardGestorDTO.TempoEvolucaoDTO(e.getKey(), e.getValue().stream().mapToLong(Long::longValue).average().orElse(0)))
-                .toList();
-
         return DashboardGestorDTO.TempoMedioDTO.builder()
-                .mediaGeralDias(mediaDias(contratos)).porCorretor(porCorr).evolucao(evol).build();
+                .mediaGeralDias(mediaDias(contratos)).porCorretor(porCorr).build();
     }
 
     private List<DashboardGestorDTO.OrigemDTO> calcularOrigens(Mes atual) {

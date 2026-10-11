@@ -92,7 +92,6 @@ public class DashboardGestorDTO {
     public static class TempoMedioDTO {
         private double mediaGeralDias;
         private List<TempoCorretorDTO> porCorretor;
-        private List<TempoEvolucaoDTO> evolucao;
     }
 
     @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
@@ -101,12 +100,6 @@ public class DashboardGestorDTO {
         private String nome;
         private double mediaDias;
         private long totalNegocios;
-    }
-
-    @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
-    public static class TempoEvolucaoDTO {
-        private String mes; // yyyy-MM
-        private double mediaDias;
     }
 
     @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
