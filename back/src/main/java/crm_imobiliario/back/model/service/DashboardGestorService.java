@@ -57,7 +57,7 @@ public class DashboardGestorService {
     private static final List<String> ETAPAS = ContagemFunil.ETAPAS;
 
     private static final Map<String,String> PIPELINE_LABELS = Map.of(
-            "lead","Novos leads",
+            "lead","Clientes no mês",
             "oportunidade","Em atendimento",
             "visita-agendada","Visita agendada",
             "visita-realizada","Visita realizada",
