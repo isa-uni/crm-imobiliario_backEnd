@@ -114,13 +114,22 @@ class SegurancaEndpointsTest {
     }
 
     @Test
-    void corretorNaoPodeCriarPapelNemListarUsuarios() throws Exception {
+    void corretorNaoPodeListarUsuarios() throws Exception {
         Usuario corretor = criarUsuario("corretor", false);
-        mockMvc.perform(post("/papel/novo").header("Authorization", bearer(corretor))
-                        .contentType(MediaType.APPLICATION_JSON).content("{\"papel\":\"superuser\"}"))
-                .andExpect(status().isForbidden());
         mockMvc.perform(get("/usuarios").header("Authorization", bearer(corretor)))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void papeisSaoSoLeituraAtePraAdmin() throws Exception {
+        Usuario admin = criarUsuario("admin", false);
+        mockMvc.perform(get("/papel").header("Authorization", bearer(admin)))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/papel/novo").header("Authorization", bearer(admin))
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"papel\":\"superuser\"}"))
+                .andExpect(status().is4xxClientError());
+        mockMvc.perform(delete("/papel/1").header("Authorization", bearer(admin)))
+                .andExpect(status().is4xxClientError());
     }
 
     @Test

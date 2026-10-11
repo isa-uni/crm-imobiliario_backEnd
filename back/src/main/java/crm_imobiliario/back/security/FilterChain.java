@@ -73,9 +73,8 @@ public class FilterChain {
                     authorization.requestMatchers(HttpMethod.GET, "/usuarios", "/usuarios/*").hasAnyRole(ADMIN, GESTOR);
                     authorization.requestMatchers("/usuarios/**").hasRole(ADMIN);
 
-                    // papéis: leitura para autenticados; criar/excluir somente admin
+                    // papéis: só leitura (não há criação nem exclusão pela API)
                     authorization.requestMatchers(HttpMethod.GET, "/papel").authenticated();
-                    authorization.requestMatchers("/papel/**").hasRole(ADMIN);
 
                     // equipes: leitura para autenticados; alterações somente admin
                     authorization.requestMatchers(HttpMethod.GET, "/equipes").authenticated();
