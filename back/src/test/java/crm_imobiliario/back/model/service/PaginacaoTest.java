@@ -326,6 +326,14 @@ class PaginacaoTest {
         mockMvc.perform(get("/leads").param("page", "0").param("size", "10").param("escopo", "meus").header("Authorization", auth))
                 .andExpect(jsonPath("$.content[*].nome", contains("Cliente do Gestor")));
 
+        // lista completa, sem paginação (Dashboard): mesmo escopo
+        mockMvc.perform(get("/leads").param("escopo", "meus").header("Authorization", auth))
+                .andExpect(jsonPath("$[*].nome", contains("Cliente do Gestor")));
+        mockMvc.perform(get("/leads").param("escopo", "equipe").header("Authorization", auth))
+                .andExpect(jsonPath("$", hasSize(2)));
+        mockMvc.perform(get("/leads").header("Authorization", auth))
+                .andExpect(jsonPath("$", hasSize(2)));
+
         // cards do resumo seguem o mesmo escopo
         mockMvc.perform(get("/leads/resumo").param("escopo", "meus").header("Authorization", auth))
                 .andExpect(jsonPath("$.total").value(1))

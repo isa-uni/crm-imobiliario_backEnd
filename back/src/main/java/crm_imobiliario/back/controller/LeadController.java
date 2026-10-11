@@ -61,9 +61,9 @@ public class LeadController {
             // gestor: "meus" (só os clientes dele) ou "equipe" (padrão)
             @RequestParam(required = false) String escopo,
             org.springframework.security.core.Authentication authentication) {
-        // sem paginação → compatível com callers legados (dashboard, etc.)
+        // sem paginação → lista completa (Dashboard); o escopo do gestor vale aqui também
         if (page == null && size == null && search == null && status == null && month == null && sort == null) {
-            List<LeadListaDTO> lead = leadService.ConsultarLeads();
+            List<LeadListaDTO> lead = leadService.ConsultarLeads(escopo);
             return ResponseEntity.ok(lead);
         }
         int p = Math.max(0, page != null ? page : 0);

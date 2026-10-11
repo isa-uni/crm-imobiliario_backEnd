@@ -452,14 +452,14 @@ public class LeadsService {
     }
 
     public List<LeadListaDTO> ConsultarLeads() {
+        return ConsultarLeads(null);
+    }
+
+    /** Lista completa do escopo do usuário (Dashboard). @param escopoGestor "meus" ou "equipe" (só para gestor) */
+    public List<LeadListaDTO> ConsultarLeads(String escopoGestor) {
         Usuario solicitante = usuarioLogado();
         if (solicitante == null) throw new AccessDeniedException("Sua sessão expirou. Faça login novamente.");
-        String papel = papelDe(solicitante);
-        if ("admin".equals(papel)) {
-            Specification<Lead> spec = specEscopo(solicitante);
-            return leadRepository.findAll(spec, Sort.by(Sort.Direction.DESC, "dataAtualizacao")).stream().map(LeadListaDTO::from).toList();
-        }
-        Specification<Lead> spec = specEscopo(solicitante);
+        Specification<Lead> spec = Specification.where(specEscopo(solicitante)).and(specSomenteMeus(solicitante, escopoGestor));
         return leadRepository.findAll(spec, Sort.by(Sort.Direction.DESC, "dataAtualizacao")).stream().map(LeadListaDTO::from).toList();
     }
 
