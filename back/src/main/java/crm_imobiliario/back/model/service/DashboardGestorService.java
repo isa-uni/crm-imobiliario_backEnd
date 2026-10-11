@@ -140,15 +140,22 @@ public class DashboardGestorService {
         return getEquipe(sol, papel);
     }
 
+    /** Administrador não entra nos cálculos do painel (ranking, metas, filtro de corretor, clientes). */
+    private static boolean ehAdmin(Usuario u) {
+        return u != null && "admin".equals(EquipeResolver.papel(u));
+    }
+
     private List<Usuario> getEquipe(Usuario solicitante, String papel) {
         if ("admin".equals(papel)) {
             return usuarioRepository.findAll().stream()
                     .filter(Usuario::isAtivo)
+                    .filter(u -> !ehAdmin(u))
                     .collect(Collectors.toList());
         }
         if ("gestor".equals(papel)) {
             List<Usuario> subs = usuarioRepository.findByGestorId(solicitante.getId()).stream()
                     .filter(Usuario::isAtivo)
+                    .filter(u -> !ehAdmin(u))
                     .collect(Collectors.toList());
             // gestor vê subordinados; se não tem subordinado, vê ao menos a si (para não ficar vazio)
             if (subs.isEmpty()) {
@@ -177,6 +184,8 @@ public class DashboardGestorService {
     }
 
     private boolean filtroEquipe(Lead lead, List<Long> equipeIds, Map<String, Long> idPorNome, String papel, Usuario solicitante) {
+        // clientes que estão com um administrador ficam fora do painel
+        if (ehAdmin(lead.getCorretor())) return false;
         if ("admin".equals(papel)) return true;
         // gestor: lead pertence a alguém da equipe via corretor_id
         if (lead.getCorretor() != null) {

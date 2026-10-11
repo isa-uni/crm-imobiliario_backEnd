@@ -192,4 +192,29 @@ class DashboardGestorMesTest {
         mockMvc.perform(get("/dashboard/gestor").param("corretorId", String.valueOf(c1.getId())).header("Authorization", bearer(gestor)))
                 .andExpect(jsonPath("$.pipeline[*].quantidade", contains(3, 3, 2, 2, 2, 1, 1)));
     }
+
+    @Test
+    void administradorNaoEntraNosCalculos() throws Exception {
+        Usuario admin = usuario("admin", null);
+        Usuario corretor = usuario("corretor", null);
+        lead(admin, 900_000, null, "lead", null, "contrato", null);      // cliente com o admin
+        lead(corretor, 100_000, null, "lead", null, "oportunidade", null);
+
+        // ranking e metas: só quem não é admin
+        mockMvc.perform(get("/dashboard/gestor").header("Authorization", bearer(admin)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rankingCorretores[?(@.corretorId == " + admin.getId() + ")]", hasSize(0)))
+                .andExpect(jsonPath("$.rankingCorretores[?(@.corretorId == " + corretor.getId() + ")]", hasSize(1)))
+                .andExpect(jsonPath("$.metas.porCorretor[?(@.corretorId == " + admin.getId() + ")]", hasSize(0)));
+        // os clientes do admin não contam em nenhum número do painel
+        mockMvc.perform(get("/dashboard/gestor").param("corretorId", String.valueOf(admin.getId())).header("Authorization", bearer(admin)))
+                .andExpect(jsonPath("$.pipeline[0].quantidade").value(0))
+                .andExpect(jsonPath("$.kpis.valorVendido").value(0.0));
+        mockMvc.perform(get("/dashboard/gestor").param("corretorId", String.valueOf(corretor.getId())).header("Authorization", bearer(admin)))
+                .andExpect(jsonPath("$.pipeline[*].quantidade", contains(1, 1, 0, 0, 0, 0, 0)));
+        // lista de corretores do filtro também sem o admin
+        mockMvc.perform(get("/dashboard/gestor/equipe").header("Authorization", bearer(admin)))
+                .andExpect(jsonPath("$[?(@.id == " + admin.getId() + ")]", hasSize(0)))
+                .andExpect(jsonPath("$[?(@.id == " + corretor.getId() + ")]", hasSize(1)));
+    }
 }
