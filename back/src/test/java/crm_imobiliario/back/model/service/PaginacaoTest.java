@@ -4,6 +4,7 @@ import static org.hamcrest.Matchers.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
+import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -11,13 +12,16 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
+import crm_imobiliario.back.model.entity.Equipe;
 import crm_imobiliario.back.model.entity.Lead;
 import crm_imobiliario.back.model.entity.Papel;
 import crm_imobiliario.back.model.entity.Usuario;
+import crm_imobiliario.back.model.repository.EquipeRepository;
 import crm_imobiliario.back.model.repository.LeadRepository;
 import crm_imobiliario.back.model.repository.PapelRepository;
 import crm_imobiliario.back.model.repository.UsuarioRepository;
@@ -49,6 +53,8 @@ class PaginacaoTest {
     @Autowired private LeadRepository leadRepository;
     @Autowired private PasswordEncoder passwordEncoder;
     @Autowired private TokenService tokenService;
+    @Autowired private EquipeRepository equipeRepository;
+    @Autowired private JdbcTemplate jdbc;
 
     private Usuario usuario(String papel, String nome, boolean ativo) {
         long n = SEQ.incrementAndGet();
@@ -219,5 +225,78 @@ class PaginacaoTest {
         mockMvc.perform(get("/leads").param("page", "0").param("size", "10").param("search", "zzz")
                         .header("Authorization", bearer(corretor)))
                 .andExpect(jsonPath("$.totalElements").value(0));
+    }
+
+    /** Lead com status, valor, origem e data de atualização definidos (dataAtualizacao é @UpdateTimestamp). */
+    private Lead leadCom(Usuario corretor, String nome, String status, long valor, String origem, String telefone, String email, LocalDate atualizado) {
+        Lead l = lead(corretor, nome, status);
+        l.setValorInteresse(valor);
+        l.setOrigem(origem);
+        l.setTelefone(telefone);
+        l.setEmail(email);
+        l = leadRepository.save(l);
+        jdbc.update("UPDATE lead SET data_atualizacao = ? WHERE id = ?", Timestamp.valueOf(atualizado.atTime(12, 0)), l.getId());
+        return l;
+    }
+
+    @Test
+    void leads_filtrosEOrdenacaoDasColunas() throws Exception {
+        Usuario gestor = usuario("gestor", "Gestor Colunas", true);
+        Equipe eq = new Equipe();
+        eq.setNome("Equipe Colunas " + SEQ.incrementAndGet());
+        eq.setGestor(gestor);
+        eq = equipeRepository.save(eq);
+        Usuario ana = usuario("corretor", "Ana Colunas", true);
+        Usuario bia = usuario("corretor", "Bia Colunas", true);
+        for (Usuario c : new Usuario[] { ana, bia }) { c.setGestor(gestor); c.setEquipe(eq); usuarioRepository.save(c); }
+
+        leadCom(ana, "Carlos", "pasta", 300_000, "espontaneo", "43911112222", "carlos@x.com", LocalDate.of(2026, 9, 10));
+        leadCom(ana, "Daniel", "lead", 100_000, "digital_lead", "43933334444", null, LocalDate.of(2026, 10, 1));
+        leadCom(bia, "Eva", "contrato", 500_000, "espontaneo", "43955556666", "eva@y.com", LocalDate.of(2026, 10, 5));
+        leadCom(bia, "Fabio", "descarte", 200_000, "ganhe_mais", "43977778888", null, LocalDate.of(2026, 10, 9));
+        String auth = bearer(gestor);
+
+        // ordenações especiais (etapa do funil e responsável) no escopo do gestor
+        mockMvc.perform(get("/leads").param("page", "0").param("size", "10").param("sort", "status,asc").header("Authorization", auth))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(4))
+                .andExpect(jsonPath("$.content[*].nome", contains("Daniel", "Carlos", "Eva", "Fabio")));
+        mockMvc.perform(get("/leads").param("page", "0").param("size", "10").param("sort", "responsavel,desc").header("Authorization", auth))
+                .andExpect(jsonPath("$.content[0].corretorNome").value("Bia Colunas"))
+                .andExpect(jsonPath("$.content[3].corretorNome").value("Ana Colunas"));
+        mockMvc.perform(get("/leads").param("page", "0").param("size", "10").param("sort", "valorInteresse,desc").header("Authorization", auth))
+                .andExpect(jsonPath("$.content[*].nome", contains("Eva", "Carlos", "Fabio", "Daniel")));
+        // página 2 de 2 com ordenação especial: total certo (a contagem não leva o ORDER BY)
+        mockMvc.perform(get("/leads").param("page", "1").param("size", "3").param("sort", "status,desc").header("Authorization", auth))
+                .andExpect(jsonPath("$.totalElements").value(4))
+                .andExpect(jsonPath("$.content[*].nome", contains("Daniel")));
+
+        // filtros
+        mockMvc.perform(get("/leads").param("page", "0").param("size", "10").param("nome", "car").header("Authorization", auth))
+                .andExpect(jsonPath("$.content[*].nome", contains("Carlos")));
+        mockMvc.perform(get("/leads").param("page", "0").param("size", "10").param("contato", "(43) 95555").header("Authorization", auth))
+                .andExpect(jsonPath("$.content[*].nome", contains("Eva")));
+        mockMvc.perform(get("/leads").param("page", "0").param("size", "10").param("contato", "@X.COM").header("Authorization", auth))
+                .andExpect(jsonPath("$.content[*].nome", contains("Carlos")));
+        mockMvc.perform(get("/leads").param("page", "0").param("size", "10").param("etapas", "lead", "pasta").param("sort", "nome,asc").header("Authorization", auth))
+                .andExpect(jsonPath("$.content[*].nome", contains("Carlos", "Daniel")));
+        mockMvc.perform(get("/leads").param("page", "0").param("size", "10").param("origens", "espontaneo").param("sort", "nome,asc").header("Authorization", auth))
+                .andExpect(jsonPath("$.content[*].nome", contains("Carlos", "Eva")));
+        mockMvc.perform(get("/leads").param("page", "0").param("size", "10").param("valorMin", "200000").param("valorMax", "300000").param("sort", "nome,asc").header("Authorization", auth))
+                .andExpect(jsonPath("$.content[*].nome", contains("Carlos", "Fabio")));
+        mockMvc.perform(get("/leads").param("page", "0").param("size", "10").param("responsavel", "bia").param("sort", "nome,asc").header("Authorization", auth))
+                .andExpect(jsonPath("$.content[*].nome", contains("Eva", "Fabio")));
+        mockMvc.perform(get("/leads").param("page", "0").param("size", "10").param("dataDe", "2026-10-01").param("dataAte", "2026-10-05").param("sort", "nome,asc").header("Authorization", auth))
+                .andExpect(jsonPath("$.content[*].nome", contains("Daniel", "Eva")));
+        // filtros somam entre si e com as abas Ativos/Arquivados
+        mockMvc.perform(get("/leads").param("page", "0").param("size", "10").param("status", "archived").param("origens", "espontaneo", "ganhe_mais").param("sort", "nome,asc").header("Authorization", auth))
+                .andExpect(jsonPath("$.content[*].nome", contains("Eva", "Fabio")));
+
+        // faixas invertidas são recusadas com mensagem
+        mockMvc.perform(get("/leads").param("page", "0").param("size", "10").param("valorMin", "5").param("valorMax", "1").header("Authorization", auth))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fields.valorMin").exists());
+        mockMvc.perform(get("/leads").param("page", "0").param("size", "10").param("dataDe", "2026-10-05").param("dataAte", "2026-10-01").header("Authorization", auth))
+                .andExpect(status().isBadRequest());
     }
 }

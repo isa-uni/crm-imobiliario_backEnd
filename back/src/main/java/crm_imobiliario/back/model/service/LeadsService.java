@@ -4,6 +4,7 @@ import crm_imobiliario.back.util.validacao.Documentos;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -18,6 +19,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import crm_imobiliario.back.model.dto.LeadAtualizacaoDTO;
+import crm_imobiliario.back.model.dto.LeadFiltroColunas;
 import crm_imobiliario.back.model.dto.LeadListaDTO;
 import crm_imobiliario.back.model.dto.LeadsDTO;
 import crm_imobiliario.back.model.dto.MetricsDTO;
@@ -31,6 +33,7 @@ import crm_imobiliario.back.model.repository.LeadRepository;
 import crm_imobiliario.back.model.repository.TramitacaoRepository;
 import crm_imobiliario.back.util.RecursoNaoEncontradoException;
 import crm_imobiliario.back.util.RegraNegocioException;
+import jakarta.persistence.criteria.Expression;
 import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
 
@@ -279,11 +282,13 @@ public class LeadsService {
             if ("gestor".equals(papel)) {
                 Equipe eq = resolverEquipeUsuario(solicitante);
                 if (eq == null) return cb.disjunction();
-                query.distinct(true);
                 Predicate equipeIgual = cb.equal(root.get("equipe").get("id"), eq.getId());
-                var corretorJoin = root.join("corretor", JoinType.LEFT);
-                var equipeCorretor = corretorJoin.join("equipe", JoinType.LEFT);
-                Predicate corretorEquipeIgual = cb.and(cb.isNull(root.get("equipe")), cb.equal(equipeCorretor.get("id"), eq.getId()));
+                // sem join (e sem DISTINCT): o Postgres não aceita DISTINCT com ORDER BY por expressão,
+                // usado na ordenação por etapa do funil e por responsável
+                var daEquipe = query.subquery(Long.class);
+                var u = daEquipe.from(Usuario.class);
+                daEquipe.select(u.get("id")).where(cb.equal(u.get("equipe").get("id"), eq.getId()));
+                Predicate corretorEquipeIgual = cb.and(cb.isNull(root.get("equipe")), root.get("corretor").get("id").in(daEquipe));
                 return cb.or(equipeIgual, corretorEquipeIgual);
             }
             if ("corretor".equals(papel)) {
@@ -347,6 +352,65 @@ public class LeadsService {
         };
     }
 
+    /** Filtros dos cabeçalhos da tabela de Leads. */
+    private Specification<Lead> specColunas(LeadFiltroColunas f) {
+        return (root, query, cb) -> {
+            List<Predicate> ps = new java.util.ArrayList<>();
+            if (temTexto(f.nome())) ps.add(cb.like(cb.lower(root.get("nome")), contem(f.nome())));
+            if (temTexto(f.contato())) {
+                Predicate email = cb.like(cb.lower(root.get("email")), contem(f.contato()));
+                String digitos = f.contato().replaceAll("\\D", "");
+                ps.add(digitos.isEmpty() ? email : cb.or(email, cb.like(root.get("telefone"), "%" + digitos + "%")));
+            }
+            if (f.etapas() != null && !f.etapas().isEmpty()) {
+                ps.add(cb.lower(root.get("status")).in(f.etapas().stream().map(String::toLowerCase).toList()));
+            }
+            if (f.origens() != null && !f.origens().isEmpty()) ps.add(root.get("origem").in(f.origens()));
+            if (f.valorMin() != null) ps.add(cb.greaterThanOrEqualTo(root.get("valorInteresse"), f.valorMin()));
+            if (f.valorMax() != null) ps.add(cb.lessThanOrEqualTo(root.get("valorInteresse"), f.valorMax()));
+            if (temTexto(f.responsavel())) {
+                var comNome = query.subquery(Long.class);
+                var u = comNome.from(Usuario.class);
+                comNome.select(u.get("id")).where(cb.like(cb.lower(u.get("nome")), contem(f.responsavel())));
+                ps.add(cb.or(root.get("corretor").get("id").in(comNome),
+                        cb.like(cb.lower(root.get("corretor_responsavel")), contem(f.responsavel()))));
+            }
+            if (f.dataDe() != null) ps.add(cb.greaterThanOrEqualTo(root.get("dataAtualizacao"), f.dataDe().atStartOfDay()));
+            if (f.dataAte() != null) ps.add(cb.lessThan(root.get("dataAtualizacao"), f.dataAte().plusDays(1).atStartOfDay()));
+            return cb.and(ps.toArray(Predicate[]::new));
+        };
+    }
+
+    private static boolean temTexto(String s) {
+        return s != null && !s.isBlank();
+    }
+
+    private static String contem(String s) {
+        return "%" + s.trim().toLowerCase() + "%";
+    }
+
+    /** Colunas ordenadas por expressão (não por um campo do lead): etapa na ordem do funil e nome do responsável. */
+    public static final Set<String> ORDENACAO_ESPECIAL = Set.of("status", "responsavel");
+
+    private Specification<Lead> specOrdenacao(Sort.Order ordem) {
+        return (root, query, cb) -> {
+            // a consulta de contagem da página não tem ORDER BY
+            if (Long.class.equals(query.getResultType()) || long.class.equals(query.getResultType())) return cb.conjunction();
+            Expression<?> expr;
+            if ("status".equals(ordem.getProperty())) {
+                var etapa = cb.<String, Integer>selectCase(cb.lower(root.get("status")));
+                List<String> funil = LeadExportService.FUNIL_ORDEM;
+                for (int i = 0; i < funil.size(); i++) etapa = etapa.when(funil.get(i), i);
+                expr = etapa.when("descarte", funil.size()).otherwise(funil.size() + 1);
+            } else {
+                var corretor = root.join("corretor", JoinType.LEFT);
+                expr = cb.lower(cb.coalesce(corretor.<String>get("nome"), root.<String>get("corretor_responsavel")));
+            }
+            query.orderBy(ordem.isAscending() ? cb.asc(expr) : cb.desc(expr), cb.desc(root.get("id")));
+            return cb.conjunction();
+        };
+    }
+
     /** Todos os leads que batem com o filtro (sem paginação) — usado pela exportação, que precisa do conjunto completo, não só de uma página. */
     public List<Lead> findAllForExport(String search, String status, String month, String origem, String historico) {
         Usuario solicitante = usuarioLogado();
@@ -399,6 +463,11 @@ public class LeadsService {
     }
 
     public Page<LeadListaDTO> findPaginated(int page, int size, Sort sort, String search, String status, String month) {
+        return findPaginated(page, size, sort, search, status, month, LeadFiltroColunas.VAZIO);
+    }
+
+    public Page<LeadListaDTO> findPaginated(int page, int size, Sort sort, String search, String status, String month,
+                                            LeadFiltroColunas colunas) {
         int p = Math.max(0, page);
         int s = Math.min(Math.max(1, size), 100);
         Usuario solicitante = usuarioLogado();
@@ -406,8 +475,17 @@ public class LeadsService {
         Specification<Lead> spec = Specification.where(specEscopo(solicitante))
                 .and(specSearch(search))
                 .and(specStatus(status))
-                .and(specMonth(month));
-        PageRequest pr = PageRequest.of(p, s, sort);
+                .and(specMonth(month))
+                .and(specColunas(colunas != null ? colunas : LeadFiltroColunas.VAZIO));
+        Sort.Order ordem = sort.stream().findFirst().orElse(null);
+        PageRequest pr;
+        if (ordem != null && ORDENACAO_ESPECIAL.contains(ordem.getProperty())) {
+            spec = spec.and(specOrdenacao(ordem));
+            pr = PageRequest.of(p, s);
+        } else {
+            // id desempata valores iguais: sem isso um lead pode aparecer em duas páginas
+            pr = PageRequest.of(p, s, sort.and(Sort.by(Sort.Direction.DESC, "id")));
+        }
         Page<Lead> pg = leadRepository.findAll(spec, pr);
         List<LeadListaDTO> content = pg.getContent().stream().map(LeadListaDTO::from).toList();
         return new PageImpl<>(content, pr, pg.getTotalElements());

@@ -1,10 +1,12 @@
 package crm_imobiliario.back.controller;
 
+import java.time.LocalDate;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Sort;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -17,6 +19,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import crm_imobiliario.back.model.dto.LeadAtualizacaoDTO;
+import crm_imobiliario.back.model.dto.LeadFiltroColunas;
 import crm_imobiliario.back.model.dto.LeadListaDTO;
 import crm_imobiliario.back.model.dto.LeadsDTO;
 import crm_imobiliario.back.model.dto.MetricsDTO;
@@ -24,6 +27,7 @@ import crm_imobiliario.back.model.dto.TramitacaoDTO;
 import crm_imobiliario.back.model.entity.Tramitacao;
 import crm_imobiliario.back.model.service.LeadExportService;
 import crm_imobiliario.back.model.service.LeadsService;
+import crm_imobiliario.back.util.RegraNegocioException;
 import jakarta.validation.Valid;
 
 @RestController
@@ -44,6 +48,16 @@ public class LeadController {
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String month,
+            // filtros dos cabeçalhos da tabela
+            @RequestParam(required = false) String nome,
+            @RequestParam(required = false) String contato,
+            @RequestParam(required = false) List<String> etapas,
+            @RequestParam(required = false) List<String> origens,
+            @RequestParam(required = false) Long valorMin,
+            @RequestParam(required = false) Long valorMax,
+            @RequestParam(required = false) String responsavel,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dataDe,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dataAte,
             org.springframework.security.core.Authentication authentication) {
         // sem paginação → compatível com callers legados (dashboard, etc.)
         if (page == null && size == null && search == null && status == null && month == null && sort == null) {
@@ -53,7 +67,14 @@ public class LeadController {
         int p = Math.max(0, page != null ? page : 0);
         int s = size != null ? Math.min(Math.max(1, size), 100) : 20;
         Sort sd = parseSort(sort);
-        Page<LeadListaDTO> pg = leadService.findPaginated(p, s, sd, search, status, month);
+        if (valorMin != null && valorMax != null && valorMin > valorMax) {
+            throw new RegraNegocioException("O valor mínimo não pode ser maior que o máximo.", "valorMin", "INVALID_RANGE");
+        }
+        if (dataDe != null && dataAte != null && dataDe.isAfter(dataAte)) {
+            throw new RegraNegocioException("A data inicial não pode ser depois da data final.", "dataDe", "INVALID_RANGE");
+        }
+        LeadFiltroColunas colunas = new LeadFiltroColunas(nome, contato, etapas, origens, valorMin, valorMax, responsavel, dataDe, dataAte);
+        Page<LeadListaDTO> pg = leadService.findPaginated(p, s, sd, search, status, month, colunas);
         return ResponseEntity.ok(pg);
     }
 
@@ -63,7 +84,8 @@ public class LeadController {
         String field = parts[0].trim();
         Sort.Direction dir = parts.length > 1 && parts[1].equalsIgnoreCase("desc") ? Sort.Direction.DESC : Sort.Direction.ASC;
         // whitelist para evitar PropertyReferenceException
-        if (!List.of("id", "nome", "email", "telefone", "origem", "status", "valorInteresse", "dataCriacao", "dataAtualizacao").contains(field)) {
+        // status = ordem do funil; responsavel = nome do corretor (ver LeadsService.ORDENACAO_ESPECIAL)
+        if (!List.of("id", "nome", "email", "telefone", "origem", "status", "responsavel", "valorInteresse", "dataCriacao", "dataAtualizacao").contains(field)) {
             field = "dataAtualizacao";
             dir = Sort.Direction.DESC;
         }
