@@ -14,12 +14,16 @@ import lombok.Setter;
 @Builder
 public class DashboardCorretorTimelineDTO {
     private List<PontoMensalDTO> timeline;
+    /** meus | equipe | todos */
+    private String escopo;
+    /** Gestor pode alternar entre os próprios clientes e os da equipe. */
+    private boolean podeVerEquipe;
 
     @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
     public static class PontoMensalDTO {
         private String mes; // yyyy-MM
         private String label; // MMM yyyy ex: jan 2026
-        private long leadsRecebidos;
+        private long leadsRecebidos; // cadastrados no mês
         private long contratosFechados;
     }
 }

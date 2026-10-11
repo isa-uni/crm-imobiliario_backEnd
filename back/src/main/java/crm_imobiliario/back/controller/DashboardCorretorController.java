@@ -27,7 +27,9 @@ public class DashboardCorretorController {
     public ResponseEntity<DashboardCorretorTimelineDTO> getTimeline(
             Authentication auth,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate inicio,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fim) {
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fim,
+            // gestor: "meus" (padrão) ou "equipe"; corretor sempre vê os seus e admin, todos
+            @RequestParam(required = false) String escopo) {
         String email = auth.getName();
         LocalDateTime ini;
         LocalDateTime fi;
@@ -51,7 +53,7 @@ public class DashboardCorretorController {
             ini = fi.withHour(0).withMinute(0).withSecond(0).withNano(0);
             fi = tmp.withHour(23).withMinute(59).withSecond(59).withNano(999999999);
         }
-        DashboardCorretorTimelineDTO dto = dashboardCorretorService.getTimeline(email, ini, fi);
+        DashboardCorretorTimelineDTO dto = dashboardCorretorService.getTimeline(email, ini, fi, escopo, LocalDateTime.now());
         return ResponseEntity.ok(dto);
     }
 }

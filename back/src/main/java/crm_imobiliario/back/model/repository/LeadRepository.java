@@ -38,6 +38,4 @@ public interface LeadRepository extends JpaRepository<Lead, Long>, JpaSpecificat
     org.springframework.data.domain.Page<Lead> findAguardandoDaEquipeOuDoResponsavel(@org.springframework.data.repository.query.Param("equipeId") Long equipeId,
             @org.springframework.data.repository.query.Param("usuarioId") Long usuarioId, org.springframework.data.domain.Pageable pageable);
 
-    @Query(value = "SELECT TO_CHAR(l.data_criacao, 'YYYY-MM') as mes, COUNT(*) FROM lead l WHERE l.corretor_id = :corretorId AND l.data_criacao >= :inicio AND l.data_criacao <= :fim GROUP BY mes ORDER BY mes", nativeQuery = true)
-    List<Object[]> contarLeadsPorMes(@Param("corretorId") Long corretorId, @Param("inicio") LocalDateTime inicio, @Param("fim") LocalDateTime fim);
 }
