@@ -86,6 +86,9 @@ public class FilterChain {
                     authorization.requestMatchers("/leads/aguardando-redistribuicao", "/leads/redistribuir", "/leads/redistribuir-em-massa",
                             "/leads/*/redistribuir/*").hasAnyRole(ADMIN, GESTOR);
 
+                    // proporções do funil do Relógio de Vendas: leitura junto da contagem (autenticado); ajuste somente admin
+                    authorization.requestMatchers(HttpMethod.PUT, "/relogio-vendas/proporcoes").hasRole(ADMIN);
+
                     // sincronização manual do catálogo de empreendimentos: somente admin
                     authorization.requestMatchers(HttpMethod.POST, "/api/v1/empreendimentos/sync").hasRole(ADMIN);
 
