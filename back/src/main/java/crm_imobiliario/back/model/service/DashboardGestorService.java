@@ -7,14 +7,19 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.TreeMap;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import crm_imobiliario.back.model.dto.DashboardGestorDTO;
+import crm_imobiliario.back.model.dto.RelogioVendasDTO;
 import crm_imobiliario.back.model.entity.Lead;
 import crm_imobiliario.back.model.entity.Meta;
 import crm_imobiliario.back.model.entity.OrigemMeta;
@@ -24,7 +29,17 @@ import crm_imobiliario.back.model.repository.LeadRepository;
 import crm_imobiliario.back.model.repository.MetaRepository;
 import crm_imobiliario.back.model.repository.TramitacaoRepository;
 import crm_imobiliario.back.model.repository.UsuarioRepository;
+import crm_imobiliario.back.model.service.ContagemFunil.Avaliado;
+import crm_imobiliario.back.model.service.ContagemFunil.Tipo;
 
+/**
+ * Dashboard do Gestor, sempre de um mês. Dois tipos de número:
+ * - eventos do mês, pela data do próprio evento: leads recebidos (cadastro), contratos (fechamento),
+ *   descartes (descarte);
+ * - carteira, pela mesma regra do Relógio de Vendas ({@link ContagemFunil}): em andamento de qualquer
+ *   mês + contratos e descartes do mês. Em mês passado, reconstruída como estava no fim do mês.
+ * Com o filtro de um corretor no mês atual, os números do pipeline batem com o Relógio dele.
+ */
 @Service
 public class DashboardGestorService {
 
@@ -39,9 +54,7 @@ public class DashboardGestorService {
     @Autowired
     private UsuarioService usuarioService;
 
-    private static final List<String> PIPELINE_ORDER = List.of(
-            "lead", "oportunidade", "visita-agendada", "visita-realizada", "pasta", "aprovado", "contrato"
-    );
+    private static final List<String> ETAPAS = ContagemFunil.ETAPAS;
 
     private static final Map<String,String> PIPELINE_LABELS = Map.of(
             "lead","Novos leads",
@@ -53,52 +66,73 @@ public class DashboardGestorService {
             "contrato","Fechado"
     );
 
-    public DashboardGestorDTO getDashboard(String email, LocalDateTime inicio, LocalDateTime fim,
-                                           Long corretorId, String origem, String status, Long empreendimentoId) {
+    /** Clientes da base avaliados para um mês. */
+    private record Mes(YearMonth mes, LocalDateTime ref, List<Avaliado> todos) {
+        List<Avaliado> naContagem() { return todos.stream().filter(a -> a.situacao().entra()).toList(); }
+        List<Avaliado> recebidos() {
+            return todos.stream().filter(a -> a.situacao().existe() && a.lead().getDataCriacao() != null
+                    && YearMonth.from(a.lead().getDataCriacao()).equals(mes)).toList();
+        }
+        List<Avaliado> contratos() { return naContagem().stream().filter(a -> a.situacao().tipo() == Tipo.CONTRATO).toList(); }
+        List<Avaliado> descartes() { return naContagem().stream().filter(a -> a.situacao().tipo() == Tipo.DESCARTE).toList(); }
+    }
+
+    @Transactional(readOnly = true)
+    public DashboardGestorDTO getDashboard(String email, YearMonth mes, LocalDateTime agora,
+                                           Long corretorId, String origem, Long empreendimentoId) {
         Usuario solicitante = usuarioService.buscarPorEmail(email);
         String papel = solicitante.getPapel() != null ? solicitante.getPapel().getPapel() : "";
 
-        // equipes: se gestor, só subordinados + ele mesmo se tiver leads; se admin, todos
+        // equipes: se gestor, só subordinados (ou ele mesmo, se não tiver); se admin, todos
         List<Usuario> equipe = getEquipe(solicitante, papel);
         List<Long> equipeIds = equipe.stream().map(Usuario::getId).toList();
 
-        // nomes da equipe (fallback legado por corretor_responsavel) resolvidos em memória,
-        // sem uma consulta ao banco por lead
+        // nomes da equipe (fallback legado por corretor_responsavel) resolvidos em memória
         Map<String, Long> idPorNome = indexarPorNome(equipe);
 
-        // só os leads do período no banco (antes: findAll() da base inteira e filtro em memória)
-        List<Lead> filtrados = leadRepository.findByDataCriacaoBetween(inicio, fim).stream()
+        // todos os clientes da equipe, de qualquer mês: a carteira inclui quem está em andamento
+        // desde meses anteriores
+        List<Lead> base = carregarBase(papel, equipeIds, solicitante).stream()
                 .filter(l -> filtroEquipe(l, equipeIds, idPorNome, papel, solicitante))
                 .filter(l -> corretorId == null || isLeadDoCorretor(l, corretorId, idPorNome))
                 .filter(l -> origem == null || origem.isBlank() || origem.equals(l.getOrigem()))
-                .filter(l -> status == null || status.isBlank() || status.equals(l.getStatus()))
                 .filter(l -> empreendimentoId == null || (l.getEmpreendimento() != null && empreendimentoId.equals(l.getEmpreendimento().getId())))
-                .collect(Collectors.toList());
+                .toList();
+        Map<Long, List<Tramitacao>> tramitacoes = carregarTramitacoes(base);
 
-        // período anterior para comparação (mesmo tamanho de janela)
-        long dias = ChronoUnit.DAYS.between(inicio, fim) + 1;
-        LocalDateTime inicioAnt = inicio.minusDays(dias);
-        LocalDateTime fimAnt = fim.minusDays(dias);
-        List<Lead> periodoAnterior = leadRepository.findByDataCriacaoBetween(inicioAnt, fimAnt).stream()
-                .filter(l -> filtroEquipe(l, equipeIds, idPorNome, papel, solicitante))
-                .collect(Collectors.toList());
-
-        // tramitações de todos os leads do período numa única consulta (antes: uma consulta por lead,
-        // repetida em ranking, KPIs e tempo médio)
-        Map<Long, List<Tramitacao>> tramitacoes = carregarTramitacoes(filtrados);
+        Mes atual = avaliarMes(base, tramitacoes, mes, agora);
+        Mes anterior = avaliarMes(base, tramitacoes, mes.minusMonths(1), agora);
 
         DashboardGestorDTO dto = new DashboardGestorDTO();
-        dto.setKpis(calcularKpis(filtrados, periodoAnterior, tramitacoes));
-        dto.setPipeline(calcularPipeline(filtrados));
-        dto.setRankingCorretores(calcularRanking(filtrados, equipe, tramitacoes));
-        dto.setMetas(calcularMetas(equipe, filtrados, inicio));
-        dto.setTempoMedio(calcularTempoMedio(filtrados, tramitacoes, idPorNome));
-        dto.setOrigens(calcularOrigens(filtrados));
-        dto.setHistorico(calcularHistorico(filtrados, inicio, fim));
-        dto.setEmpreendimentosMaisProcurados(calcularEmpreendimentos(filtrados));
+        dto.setMesReferencia(mes.toString());
+        dto.setKpis(calcularKpis(atual, anterior));
+        dto.setPipeline(calcularPipeline(atual));
+        dto.setRankingCorretores(calcularRanking(atual, equipe, tramitacoes, idPorNome));
+        dto.setMetas(calcularMetas(equipe, atual.contratos().stream().map(Avaliado::lead).toList(), mes.atDay(1).atStartOfDay()));
+        dto.setTempoMedio(calcularTempoMedio(atual, base, tramitacoes, idPorNome));
+        dto.setOrigens(calcularOrigens(atual));
+        dto.setHistorico(calcularHistorico(atual));
+        dto.setEmpreendimentosMaisProcurados(calcularEmpreendimentos(atual));
         dto.setAlertas(calcularAlertas(dto.getRankingCorretores(), dto.getMetas()));
-
         return dto;
+    }
+
+    private Mes avaliarMes(List<Lead> base, Map<Long, List<Tramitacao>> tramitacoes, YearMonth mes, LocalDateTime agora) {
+        LocalDateTime ref = ContagemFunil.referencia(mes, agora);
+        boolean mesCorrente = mes.equals(YearMonth.from(agora));
+        List<Avaliado> todos = base.stream()
+                .map(l -> new Avaliado(l, ContagemFunil.avaliar(l, tramitacoes.getOrDefault(l.getId(), List.of()), mes, ref, mesCorrente)))
+                .toList();
+        return new Mes(mes, ref, todos);
+    }
+
+    private List<Lead> carregarBase(String papel, List<Long> equipeIds, Usuario solicitante) {
+        if ("admin".equals(papel)) return leadRepository.findAll();
+        Map<Long, Lead> porId = new LinkedHashMap<>();
+        if (!equipeIds.isEmpty()) leadRepository.findByCorretorIdIn(equipeIds).forEach(l -> porId.put(l.getId(), l));
+        // leads sem corretor (ex.: aguardando redistribuição) da equipe do gestor
+        if (solicitante.getEquipe() != null) leadRepository.findByEquipeId(solicitante.getEquipe().getId()).forEach(l -> porId.putIfAbsent(l.getId(), l));
+        return new ArrayList<>(porId.values());
     }
 
     public List<Usuario> getEquipeCorretores(String email) {
@@ -119,7 +153,6 @@ public class DashboardGestorService {
                     .collect(Collectors.toList());
             // gestor vê subordinados; se não tem subordinado, vê ao menos a si (para não ficar vazio)
             if (subs.isEmpty()) {
-                // tenta buscar por equipe vazia: retorna lista com o próprio gestor para permitir gestão
                 List<Usuario> self = new ArrayList<>();
                 self.add(solicitante);
                 return self;
@@ -156,7 +189,6 @@ public class DashboardGestorService {
             return id != null && equipeIds.contains(id);
         }
         // lead sem responsável (ex.: aguardando redistribuição): só entra se for da equipe do gestor.
-        // Antes retornava true para qualquer órfão ("temporário"), e gestores viam leads de outras equipes.
         return lead.getEquipe() != null && solicitante.getEquipe() != null
                 && lead.getEquipe().getId().equals(solicitante.getEquipe().getId());
     }
@@ -169,136 +201,108 @@ public class DashboardGestorService {
         return false;
     }
 
-    private DashboardGestorDTO.KpiDTO calcularKpis(List<Lead> atuais, List<Lead> anteriores, Map<Long, List<Tramitacao>> tramitacoes) {
-        long leads = atuais.size();
-        long negocios = atuais.stream().filter(l -> "contrato".equals(l.getStatus())).count();
-        double valor = atuais.stream().filter(l -> "contrato".equals(l.getStatus()))
-                .mapToDouble(l -> l.getValorInteresse() != null ? l.getValorInteresse() : 0).sum();
-        double taxa = leads > 0 ? (double) negocios / leads * 100 : 0;
-        double ticket = negocios > 0 ? valor / negocios : 0;
+    private static double valor(Lead l) {
+        return l.getValorInteresse() != null ? l.getValorInteresse() : 0;
+    }
 
-        // tempo médio até fechamento
-        double tempoMedio = calcularTempoMedioGeral(atuais, tramitacoes);
+    private static double variacao(double atual, double anterior) {
+        return anterior > 0 ? (atual - anterior) / anterior * 100 : (atual > 0 ? 100 : 0);
+    }
 
-        long leadsAnt = anteriores.size();
-        long negAnt = anteriores.stream().filter(l -> "contrato".equals(l.getStatus())).count();
-        double valorAnt = anteriores.stream().filter(l -> "contrato".equals(l.getStatus()))
-                .mapToDouble(l -> l.getValorInteresse() != null ? l.getValorInteresse() : 0).sum();
+    private DashboardGestorDTO.KpiDTO calcularKpis(Mes atual, Mes anterior) {
+        long recebidos = atual.recebidos().size();
+        List<Avaliado> contratos = atual.contratos();
+        long negocios = contratos.size();
+        double valor = contratos.stream().mapToDouble(a -> valor(a.lead())).sum();
+        long naContagem = atual.naContagem().size();
 
-        double varLeads = leadsAnt > 0 ? (double)(leads - leadsAnt)/leadsAnt*100 : (leads>0?100:0);
-        double varNeg = negAnt > 0 ? (double)(negocios - negAnt)/negAnt*100 : (negocios>0?100:0);
-        double varValor = valorAnt > 0 ? (valor - valorAnt)/valorAnt*100 : (valor>0?100:0);
+        long recebidosAnt = anterior.recebidos().size();
+        List<Avaliado> contratosAnt = anterior.contratos();
+        long negociosAnt = contratosAnt.size();
+        double valorAnt = contratosAnt.stream().mapToDouble(a -> valor(a.lead())).sum();
 
         return DashboardGestorDTO.KpiDTO.builder()
-                .leadsRecebidos(leads).negociosFechados(negocios).valorVendido(valor)
-                .taxaConversao(taxa).ticketMedio(ticket).tempoMedioDias(tempoMedio)
-                .leadsRecebidosAnterior(leadsAnt).variacaoLeads(varLeads)
-                .negociosAnterior(negAnt).variacaoNegocios(varNeg)
-                .valorAnterior(valorAnt).variacaoValor(varValor)
+                .leadsRecebidos(recebidos).negociosFechados(negocios).valorVendido(valor)
+                // contratos do mês ÷ clientes trabalhados no mês (mesma população do Relógio de Vendas)
+                .taxaConversao(naContagem > 0 ? (double) negocios / naContagem * 100 : 0)
+                .ticketMedio(negocios > 0 ? valor / negocios : 0)
+                .tempoMedioDias(mediaDias(contratos))
+                .leadsRecebidosAnterior(recebidosAnt).variacaoLeads(variacao(recebidos, recebidosAnt))
+                .negociosAnterior(negociosAnt).variacaoNegocios(variacao(negocios, negociosAnt))
+                .valorAnterior(valorAnt).variacaoValor(variacao(valor, valorAnt))
                 .build();
     }
 
-    private double calcularTempoMedioGeral(List<Lead> leads, Map<Long, List<Tramitacao>> tramitacoes) {
-        List<Lead> contratos = leads.stream().filter(l -> "contrato".equals(l.getStatus())).toList();
-        if (contratos.isEmpty()) return 0;
-        double sum = 0;
-        int count = 0;
-        for (Lead l : contratos) {
-            List<Tramitacao> trams = tramitacoes.getOrDefault(l.getId(), List.of());
-            if (trams.size() >= 1) {
-                LocalDateTime inicio = l.getDataCriacao();
-                // última tramitação com status contrato
-                Tramitacao fech = trams.stream().filter(t -> "contrato".equals(t.getStatus_atual())).reduce((a,b)->b).orElse(null);
-                LocalDateTime fim = fech != null ? fech.getDataMovimentacao() : l.getDataAtualizacao();
-                if (inicio != null && fim != null) {
-                    long dias = ChronoUnit.DAYS.between(inicio, fim);
-                    if (dias < 0) dias = 0;
-                    sum += dias;
-                    count++;
-                }
-            }
-        }
-        return count > 0 ? sum / count : 0;
+    /** Dias entre o cadastro e o fechamento do contrato. */
+    private static long diasAteFechar(Avaliado a) {
+        LocalDateTime ini = a.lead().getDataCriacao();
+        LocalDateTime fim = a.situacao().quando();
+        if (ini == null || fim == null) return 0;
+        return Math.max(0, ChronoUnit.DAYS.between(ini, fim));
     }
 
-    private List<DashboardGestorDTO.PipelineEtapaDTO> calcularPipeline(List<Lead> leads) {
-        long total = leads.size();
-        Map<String, Long> cont = leads.stream().collect(Collectors.groupingBy(l -> l.getStatus() != null ? l.getStatus() : "lead", Collectors.counting()));
-        Map<String, Double> valorPorStatus = leads.stream().collect(Collectors.groupingBy(
-                l -> l.getStatus() != null ? l.getStatus() : "lead",
-                Collectors.summingDouble(l -> l.getValorInteresse() != null ? l.getValorInteresse() : 0)
-        ));
+    private static double mediaDias(List<Avaliado> contratos) {
+        return contratos.stream().mapToLong(DashboardGestorService::diasAteFechar).average().orElse(0);
+    }
+
+    private List<DashboardGestorDTO.PipelineEtapaDTO> calcularPipeline(Mes atual) {
+        List<Avaliado> naContagem = atual.naContagem();
+        List<RelogioVendasDTO.Etapa> etapas = ContagemFunil.etapas(naContagem, atual.ref());
+        long base = etapas.get(0).realizado();
         List<DashboardGestorDTO.PipelineEtapaDTO> res = new ArrayList<>();
-        for (String s : PIPELINE_ORDER) {
-            long q = cont.getOrDefault(s, 0L);
-            double perc = total > 0 ? (double) q / total * 100 : 0;
+        for (RelogioVendasDTO.Etapa e : etapas) {
+            // valor parado na etapa: clientes em andamento cuja etapa atual é esta; em Fechado, o vendido no mês
+            double valorEtapa = "contrato".equals(e.etapa())
+                    ? atual.contratos().stream().mapToDouble(a -> valor(a.lead())).sum()
+                    : naContagem.stream().filter(a -> a.situacao().tipo() == Tipo.ANDAMENTO && e.etapa().equals(a.situacao().etapaAtual()))
+                            .mapToDouble(a -> valor(a.lead())).sum();
             res.add(DashboardGestorDTO.PipelineEtapaDTO.builder()
-                    .status(s).label(PIPELINE_LABELS.getOrDefault(s,s))
-                    .quantidade(q).percentual(perc).valorPotencial(valorPorStatus.getOrDefault(s,0.0))
+                    .status(e.etapa()).label(PIPELINE_LABELS.getOrDefault(e.etapa(), e.etapa()))
+                    .quantidade(e.realizado())
+                    .percentual(base > 0 ? (double) e.realizado() / base * 100 : 0)
+                    .valorPotencial(valorEtapa)
+                    .emAndamento(e.emAndamento()).contratosNoMes(e.contratosNoMes()).descartadosNoMes(e.descartadosNoMes())
+                    .descartesNestaEtapa(e.descartesNestaEtapa()).porMesCadastro(e.porMesCadastro())
                     .build());
-        }
-        // incluir descarte separado
-        long desc = cont.getOrDefault("descarte", 0L);
-        if (desc > 0) {
-            res.add(DashboardGestorDTO.PipelineEtapaDTO.builder()
-                    .status("descarte").label("Descarte").quantidade(desc)
-                    .percentual(total>0?(double)desc/total*100:0).valorPotencial(valorPorStatus.getOrDefault("descarte",0.0)).build());
         }
         return res;
     }
 
-    private List<DashboardGestorDTO.RankingCorretorDTO> calcularRanking(List<Lead> leads, List<Usuario> equipe, Map<Long, List<Tramitacao>> tramitacoes) {
-        // agrupa por corretor (via corretor_id ou corretor_responsavel)
-        Map<Long, List<Lead>> porCorretor = new HashMap<>();
-        Map<String, List<Lead>> porNomeFallback = new HashMap<>();
-
-        for (Lead l : leads) {
-            if (l.getCorretor() != null) {
-                porCorretor.computeIfAbsent(l.getCorretor().getId(), k->new ArrayList<>()).add(l);
-            } else if (l.getCorretor_responsavel() != null) {
-                porNomeFallback.computeIfAbsent(l.getCorretor_responsavel(), k->new ArrayList<>()).add(l);
-            }
-        }
-
-        // também conta tramitações como contatos
+    private List<DashboardGestorDTO.RankingCorretorDTO> calcularRanking(Mes atual, List<Usuario> equipe,
+                                                                         Map<Long, List<Tramitacao>> tramitacoes, Map<String, Long> idPorNome) {
+        LocalDateTime inicioMes = atual.mes().atDay(1).atStartOfDay();
+        // contatos = movimentações de status feitas pelo corretor no mês
         Map<Long, Long> contatosPorCorretor = new HashMap<>();
-        for (Lead l : leads) {
-            for (Tramitacao t : tramitacoes.getOrDefault(l.getId(), List.of())) {
-                if (t.getUsuario() != null) {
-                    contatosPorCorretor.merge(t.getUsuario().getId(), 1L, Long::sum);
-                }
+        tramitacoes.values().forEach(lista -> lista.forEach(t -> {
+            if (t.getUsuario() != null && t.getDataMovimentacao() != null
+                    && !t.getDataMovimentacao().isBefore(inicioMes) && !t.getDataMovimentacao().isAfter(atual.ref())) {
+                contatosPorCorretor.merge(t.getUsuario().getId(), 1L, Long::sum);
             }
-        }
+        }));
 
+        List<Avaliado> naContagem = atual.naContagem();
         List<DashboardGestorDTO.RankingCorretorDTO> lista = new ArrayList<>();
         for (Usuario u : equipe) {
-            List<Lead> meus = porCorretor.getOrDefault(u.getId(), new ArrayList<>());
-            // merge fallback por nome
-            if (porNomeFallback.containsKey(u.getNome())) {
-                meus.addAll(porNomeFallback.get(u.getNome()));
-            }
+            List<Avaliado> meus = naContagem.stream().filter(a -> isLeadDoCorretor(a.lead(), u.getId(), idPorNome)).toList();
             long total = meus.size();
-            long negocios = meus.stream().filter(l -> "contrato".equals(l.getStatus())).count();
-            long propostas = meus.stream().filter(l -> List.of("visita-realizada","pasta","aprovado","contrato").contains(l.getStatus())).count();
-            long contatos = contatosPorCorretor.getOrDefault(u.getId(), 0L);
-            double conv = total > 0 ? (double) negocios/total*100 : 0;
+            long negocios = meus.stream().filter(a -> a.situacao().tipo() == Tipo.CONTRATO).count();
+            long oportunidades = meus.stream().filter(a -> a.situacao().maxIdx() >= 1).count();
+            double conv = total > 0 ? (double) negocios / total * 100 : 0;
             String atencao = "ok";
             if (total == 0 || conv < 2) atencao = "critico";
             else if (conv < 5 || total < 3) atencao = "atencao";
 
             lista.add(DashboardGestorDTO.RankingCorretorDTO.builder()
                     .corretorId(u.getId()).nome(u.getNome())
-                    .leads(total).contatos(contatos).propostas(propostas).negocios(negocios)
+                    .leads(total).contatos(contatosPorCorretor.getOrDefault(u.getId(), 0L)).propostas(oportunidades).negocios(negocios)
                     .conversao(conv).statusAtencao(atencao).build());
         }
-        lista.sort(Comparator.comparingLong(DashboardGestorDTO.RankingCorretorDTO::getNegocios).reversed()
-                .thenComparingLong(DashboardGestorDTO.RankingCorretorDTO::getLeads).reversed());
-        // corrige ordem: maior negócios primeiro
-        lista.sort((a,b) -> Long.compare(b.getNegocios(), a.getNegocios()));
+        lista.sort((a, b) -> Long.compare(b.getNegocios(), a.getNegocios()));
         return lista;
     }
 
-    private DashboardGestorDTO.MetaEquipeDTO calcularMetas(List<Usuario> equipe, List<Lead> leadsPeriodo, LocalDateTime inicio) {
+    /** @param contratosDoMes clientes que fecharam contrato no mês da meta */
+    private DashboardGestorDTO.MetaEquipeDTO calcularMetas(List<Usuario> equipe, List<Lead> contratosDoMes, LocalDateTime inicio) {
         YearMonth ym = YearMonth.from(inicio);
         LocalDate mesRef = ym.atDay(1);
 
@@ -313,20 +317,18 @@ public class DashboardGestorService {
 
         int metaContratosTotal = metaEfetivaPorUsuario.values().stream().mapToInt(m -> m.getMetaContratos() != null ? m.getMetaContratos() : 0).sum();
 
-        long realizadoContratos = leadsPeriodo.stream().filter(l -> "contrato".equals(l.getStatus())).count();
+        long realizadoContratos = contratosDoMes.size();
 
         double percContr = metaContratosTotal > 0 ? (double) realizadoContratos / metaContratosTotal * 100 : 0;
 
         List<DashboardGestorDTO.MetaCorretorDTO> porCorretor = new ArrayList<>();
         for (Usuario u : equipe) {
             Meta m = metaEfetivaPorUsuario.get(u.getId());
-            // filtra leads do corretor
-            List<Lead> meus = leadsPeriodo.stream().filter(l -> {
+            long rc = contratosDoMes.stream().filter(l -> {
                 if (l.getCorretor()!=null) return u.getId().equals(l.getCorretor().getId());
                 if (l.getCorretor_responsavel()!=null) return u.getNome().equalsIgnoreCase(l.getCorretor_responsavel());
                 return false;
-            }).toList();
-            long rc = meus.stream().filter(l->"contrato".equals(l.getStatus())).count();
+            }).count();
             Integer mc = m != null ? m.getMetaContratos() : null;
             List<Meta> ms = metasPorUsuario.get(u.getId());
             Integer metaGestor = ms.stream().filter(x -> x.getOrigem() == OrigemMeta.GESTOR)
@@ -334,7 +336,7 @@ public class DashboardGestorService {
             Integer metaPropria = ms.stream().filter(x -> x.getOrigem() == OrigemMeta.CORRETOR)
                     .map(Meta::getMetaContratos).findFirst().orElse(null);
             double pc = (mc != null && mc > 0) ? (double) rc / mc * 100 : 0;
-            String st = "sem_meta";
+            String st;
             if (m == null) st = "sem_meta";
             else if (pc >= 100) st = "atingida";
             else if (pc >= 70) st = "proxima";
@@ -365,130 +367,125 @@ public class DashboardGestorService {
                 .orElseGet(() -> metas.stream().filter(m -> m.getOrigem() == OrigemMeta.GESTOR).findFirst().orElse(null));
     }
 
-    private DashboardGestorDTO.TempoMedioDTO calcularTempoMedio(List<Lead> leads, Map<Long, List<Tramitacao>> tramitacoes, Map<String, Long> idPorNome) {
-        // contratos no período
-        List<Lead> contratos = leads.stream().filter(l->"contrato".equals(l.getStatus())).toList();
-        double mediaGeral = calcularTempoMedioGeral(leads, tramitacoes);
+    private DashboardGestorDTO.TempoMedioDTO calcularTempoMedio(Mes atual, List<Lead> base, Map<Long, List<Tramitacao>> tramitacoes,
+                                                                Map<String, Long> idPorNome) {
+        List<Avaliado> contratos = atual.contratos();
 
-        // por corretor
+        // por corretor, sobre os contratos fechados no mês
         Map<Long, List<Long>> diasPorCorretor = new HashMap<>();
         Map<Long, String> nomePorCorretor = new HashMap<>();
-        for (Lead l : contratos) {
-            List<Tramitacao> trams = tramitacoes.getOrDefault(l.getId(), List.of());
-            LocalDateTime ini = l.getDataCriacao();
-            Tramitacao fech = trams.stream().filter(t->"contrato".equals(t.getStatus_atual())).reduce((a,b)->b).orElse(null);
-            LocalDateTime fim = fech != null ? fech.getDataMovimentacao() : l.getDataAtualizacao();
-            if (ini==null || fim==null) continue;
-            long dias = ChronoUnit.DAYS.between(ini, fim);
-            if (dias<0) dias=0;
-            Long corrId = l.getCorretor()!=null ? l.getCorretor().getId() : null;
-            String nome = l.getCorretor()!=null ? l.getCorretor().getNome() : l.getCorretor_responsavel();
-            if (corrId==null && l.getCorretor_responsavel()!=null) {
-                // fallback legado: id pelo nome (índice em memória, sem consulta por lead)
-                corrId = idPorNome.get(l.getCorretor_responsavel().toLowerCase());
-            }
-            if (corrId!=null) {
-                diasPorCorretor.computeIfAbsent(corrId,k->new ArrayList<>()).add(dias);
-                nomePorCorretor.putIfAbsent(corrId, nome);
-            }
+        for (Avaliado a : contratos) {
+            Lead l = a.lead();
+            Long corrId = l.getCorretor() != null ? l.getCorretor().getId()
+                    : l.getCorretor_responsavel() != null ? idPorNome.get(l.getCorretor_responsavel().toLowerCase()) : null;
+            if (corrId == null) continue;
+            diasPorCorretor.computeIfAbsent(corrId, k -> new ArrayList<>()).add(diasAteFechar(a));
+            nomePorCorretor.putIfAbsent(corrId, l.getCorretor() != null ? l.getCorretor().getNome() : l.getCorretor_responsavel());
         }
         List<DashboardGestorDTO.TempoCorretorDTO> porCorr = new ArrayList<>();
-        for (Map.Entry<Long, List<Long>> e: diasPorCorretor.entrySet()) {
-            double avg = e.getValue().stream().mapToLong(Long::longValue).average().orElse(0);
+        for (Map.Entry<Long, List<Long>> e : diasPorCorretor.entrySet()) {
             String nome = nomePorCorretor.get(e.getKey());
             porCorr.add(DashboardGestorDTO.TempoCorretorDTO.builder()
-                    .corretorId(e.getKey()).nome(nome!=null?nome:"-")
-                    .mediaDias(avg).totalNegocios(e.getValue().size()).build());
+                    .corretorId(e.getKey()).nome(nome != null ? nome : "-")
+                    .mediaDias(e.getValue().stream().mapToLong(Long::longValue).average().orElse(0))
+                    .totalNegocios(e.getValue().size()).build());
         }
 
-        // evolução por mês (últimos 6 meses dos contratos filtrados, mas usa dataCriacao)
-        Map<String, List<Long>> porMes = new HashMap<>();
-        for (Lead l : contratos) {
-            String mes = YearMonth.from(l.getDataCriacao()).toString(); // yyyy-MM
-            List<Tramitacao> trams = tramitacoes.getOrDefault(l.getId(), List.of());
-            Tramitacao fech = trams.stream().filter(t->"contrato".equals(t.getStatus_atual())).reduce((a,b)->b).orElse(null);
-            LocalDateTime fim = fech != null ? fech.getDataMovimentacao() : l.getDataAtualizacao();
-            if (l.getDataCriacao()==null || fim==null) continue;
-            long dias = ChronoUnit.DAYS.between(l.getDataCriacao(), fim);
-            porMes.computeIfAbsent(mes,k->new ArrayList<>()).add(dias);
+        // evolução: média dos contratos agrupada pelo mês de FECHAMENTO, nos 6 meses até o mês escolhido
+        YearMonth primeiro = atual.mes().minusMonths(5);
+        Map<String, List<Long>> porMes = new TreeMap<>();
+        for (Lead l : base) {
+            if (l.getDataCriacao() == null) continue;
+            LocalDateTime fechou = null;
+            for (Tramitacao t : tramitacoes.getOrDefault(l.getId(), List.of())) {
+                if ("contrato".equals(t.getStatus_atual()) && t.getDataMovimentacao() != null && !t.getDataMovimentacao().isAfter(atual.ref())) {
+                    fechou = t.getDataMovimentacao();
+                }
+            }
+            if (fechou == null) continue;
+            YearMonth ym = YearMonth.from(fechou);
+            if (ym.isBefore(primeiro) || ym.isAfter(atual.mes())) continue;
+            porMes.computeIfAbsent(ym.toString(), k -> new ArrayList<>())
+                    .add(Math.max(0, ChronoUnit.DAYS.between(l.getDataCriacao(), fechou)));
         }
         List<DashboardGestorDTO.TempoEvolucaoDTO> evol = porMes.entrySet().stream()
                 .map(e -> new DashboardGestorDTO.TempoEvolucaoDTO(e.getKey(), e.getValue().stream().mapToLong(Long::longValue).average().orElse(0)))
-                .sorted(Comparator.comparing(DashboardGestorDTO.TempoEvolucaoDTO::getMes))
                 .toList();
 
         return DashboardGestorDTO.TempoMedioDTO.builder()
-                .mediaGeralDias(mediaGeral).porCorretor(porCorr).evolucao(evol).build();
+                .mediaGeralDias(mediaDias(contratos)).porCorretor(porCorr).evolucao(evol).build();
     }
 
-    private List<DashboardGestorDTO.OrigemDTO> calcularOrigens(List<Lead> leads) {
-        long total = leads.size();
-        Map<String, List<Lead>> porOrigem = leads.stream()
-                .collect(Collectors.groupingBy(l -> l.getOrigem()!=null?l.getOrigem():"sem_origem"));
+    private List<DashboardGestorDTO.OrigemDTO> calcularOrigens(Mes atual) {
+        List<Avaliado> recebidos = atual.recebidos();
+        long total = recebidos.size();
+        String semOrigem = "sem_origem";
+        Map<String, List<Avaliado>> recebidosPorOrigem = recebidos.stream()
+                .collect(Collectors.groupingBy(a -> Objects.requireNonNullElse(a.lead().getOrigem(), semOrigem)));
+        Map<String, Long> negociosPorOrigem = atual.contratos().stream()
+                .collect(Collectors.groupingBy(a -> Objects.requireNonNullElse(a.lead().getOrigem(), semOrigem), Collectors.counting()));
+
+        List<String> origens = new ArrayList<>(recebidosPorOrigem.keySet());
+        negociosPorOrigem.keySet().stream().filter(o -> !origens.contains(o)).forEach(origens::add);
+
         List<DashboardGestorDTO.OrigemDTO> res = new ArrayList<>();
-        for (Map.Entry<String, List<Lead>> e: porOrigem.entrySet()) {
-            long q = e.getValue().size();
-            long neg = e.getValue().stream().filter(l->"contrato".equals(l.getStatus())).count();
-            long conv = e.getValue().stream().filter(l-> List.of("oportunidade","visita-agendada","visita-realizada","pasta","aprovado","contrato").contains(l.getStatus())).count();
-            double taxa = q>0 ? (double)neg/q*100:0;
+        for (String o : origens) {
+            List<Avaliado> lista = recebidosPorOrigem.getOrDefault(o, List.of());
+            long q = lista.size();
+            long neg = negociosPorOrigem.getOrDefault(o, 0L);
+            long conv = lista.stream().filter(a -> a.situacao().maxIdx() >= 1).count();
             res.add(DashboardGestorDTO.OrigemDTO.builder()
-                    .origem(e.getKey()).label(e.getKey()).quantidade(q).percentual(total>0?(double)q/total*100:0)
-                    .conversoes(conv).negocios(neg).taxaConversao(taxa).build());
+                    .origem(o).label(o).quantidade(q).percentual(total > 0 ? (double) q / total * 100 : 0)
+                    .conversoes(conv).negocios(neg).taxaConversao(q > 0 ? (double) neg / q * 100 : 0).build());
         }
         res.sort(Comparator.comparingLong(DashboardGestorDTO.OrigemDTO::getQuantidade).reversed());
         return res;
     }
 
-    private List<DashboardGestorDTO.HistoricoDTO> calcularHistorico(List<Lead> leads, LocalDateTime inicio, LocalDateTime fim) {
-        // agrupa por dia se período <= 31 dias, senão por mês
-        long dias = ChronoUnit.DAYS.between(inicio, fim);
-        boolean porDia = dias <= 31;
-        Map<String, List<Lead>> grouped = leads.stream().collect(Collectors.groupingBy(l -> {
-            if (porDia) return l.getDataCriacao().toLocalDate().toString();
-            return YearMonth.from(l.getDataCriacao()).toString();
-        }));
+    /** Dia a dia do mês: recebidos pelo cadastro, contratos pelo fechamento, descartes pelo descarte. */
+    private List<DashboardGestorDTO.HistoricoDTO> calcularHistorico(Mes atual) {
+        Map<LocalDate, Long> recebidos = atual.recebidos().stream()
+                .collect(Collectors.groupingBy(a -> a.lead().getDataCriacao().toLocalDate(), Collectors.counting()));
+        Map<LocalDate, Long> contratos = atual.contratos().stream()
+                .collect(Collectors.groupingBy(a -> a.situacao().quando().toLocalDate(), Collectors.counting()));
+        Map<LocalDate, Long> descartes = atual.descartes().stream()
+                .collect(Collectors.groupingBy(a -> a.situacao().quando().toLocalDate(), Collectors.counting()));
+
         List<DashboardGestorDTO.HistoricoDTO> res = new ArrayList<>();
-        // gerar série completa (inclui zero)
-        LocalDate cursor = inicio.toLocalDate();
-        LocalDate end = fim.toLocalDate();
-        while (!cursor.isAfter(end)) {
-            String key = porDia ? cursor.toString() : YearMonth.from(cursor).toString();
-            // evita duplicar meses
-            if (res.stream().noneMatch(r->r.getPeriodo().equals(key))) {
-                List<Lead> lista = grouped.getOrDefault(key, List.of());
-                // para agrupamento mensal, precisa somar todos os dias do mês
-                if (!porDia) {
-                    // já agrupado por mês, ok
-                }
-                long rec = lista.size();
-                long cont = lista.stream().filter(l->"contrato".equals(l.getStatus())).count();
-                long desc = lista.stream().filter(l->"descarte".equals(l.getStatus())).count();
-                res.add(DashboardGestorDTO.HistoricoDTO.builder().periodo(key).recebidos(rec).contratos(cont).descartes(desc).build());
-            }
-            cursor = porDia ? cursor.plusDays(1) : cursor.plusMonths(1).withDayOfMonth(1);
-            if (!porDia && cursor.isAfter(end)) break;
-            if (porDia && cursor.isAfter(end)) break;
+        LocalDate fim = atual.ref().toLocalDate();
+        for (LocalDate d = atual.mes().atDay(1); !d.isAfter(fim); d = d.plusDays(1)) {
+            res.add(DashboardGestorDTO.HistoricoDTO.builder().periodo(d.toString())
+                    .recebidos(recebidos.getOrDefault(d, 0L))
+                    .contratos(contratos.getOrDefault(d, 0L))
+                    .descartes(descartes.getOrDefault(d, 0L)).build());
         }
-        // filtra apenas chaves que existem no grouped para não poluir com zeros excessivos quando porDia=false mas já adicionou
-        // Simplifica: retorna ordenado por periodo
-        res.sort(Comparator.comparing(DashboardGestorDTO.HistoricoDTO::getPeriodo));
         return res;
     }
 
-    private List<DashboardGestorDTO.EmpreendimentoInteresseDTO> calcularEmpreendimentos(List<Lead> leads) {
-        Map<Long, List<Lead>> porEmpreendimento = leads.stream()
-                .filter(l -> l.getEmpreendimento()!=null)
-                .collect(Collectors.groupingBy(l -> l.getEmpreendimento().getId()));
+    private List<DashboardGestorDTO.EmpreendimentoInteresseDTO> calcularEmpreendimentos(Mes atual) {
+        Map<Long, String> nomes = new HashMap<>();
+        Map<Long, List<Avaliado>> interessados = new HashMap<>();
+        for (Avaliado a : atual.recebidos()) {
+            if (a.lead().getEmpreendimento() == null) continue;
+            interessados.computeIfAbsent(a.lead().getEmpreendimento().getId(), k -> new ArrayList<>()).add(a);
+            nomes.putIfAbsent(a.lead().getEmpreendimento().getId(), a.lead().getEmpreendimento().getNome());
+        }
+        Map<Long, Long> negocios = new HashMap<>();
+        for (Avaliado a : atual.contratos()) {
+            if (a.lead().getEmpreendimento() == null) continue;
+            negocios.merge(a.lead().getEmpreendimento().getId(), 1L, Long::sum);
+            nomes.putIfAbsent(a.lead().getEmpreendimento().getId(), a.lead().getEmpreendimento().getNome());
+        }
+        int idxPasta = ETAPAS.indexOf("pasta");
         List<DashboardGestorDTO.EmpreendimentoInteresseDTO> res = new ArrayList<>();
-        for (Map.Entry<Long, List<Lead>> e: porEmpreendimento.entrySet()) {
-            List<Lead> lista = e.getValue();
-            long interessados = lista.size();
-            long propostas = lista.stream().filter(l-> List.of("pasta","aprovado","contrato").contains(l.getStatus())).count();
-            long negocios = lista.stream().filter(l->"contrato".equals(l.getStatus())).count();
-            double conv = interessados>0 ? (double)negocios/interessados*100:0;
-            String nome = lista.get(0).getEmpreendimento().getNome();
+        for (Map.Entry<Long, String> e : nomes.entrySet()) {
+            List<Avaliado> lista = interessados.getOrDefault(e.getKey(), List.of());
+            long q = lista.size();
+            long propostas = lista.stream().filter(a -> a.situacao().maxIdx() >= idxPasta).count();
+            long neg = negocios.getOrDefault(e.getKey(), 0L);
             res.add(DashboardGestorDTO.EmpreendimentoInteresseDTO.builder()
-                    .empreendimentoId(e.getKey()).nome(nome).interessados(interessados).propostas(propostas).negocios(negocios).conversao(conv).build());
+                    .empreendimentoId(e.getKey()).nome(e.getValue()).interessados(q).propostas(propostas).negocios(neg)
+                    .conversao(q > 0 ? (double) neg / q * 100 : 0).build());
         }
         res.sort(Comparator.comparingLong(DashboardGestorDTO.EmpreendimentoInteresseDTO::getInteressados).reversed());
         return res.stream().limit(10).toList();

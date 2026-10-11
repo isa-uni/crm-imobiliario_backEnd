@@ -2,7 +2,7 @@ package crm_imobiliario.back.controller;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
+import java.time.YearMonth;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -44,33 +44,30 @@ public class DashboardGestorController {
     @Autowired
     private crm_imobiliario.back.model.service.UsuarioService usuarioService;
 
+    /**
+     * Indicadores de um mês (parâmetro mes = AAAA-MM; padrão: mês atual). Mês passado mostra a carteira
+     * como estava no fim daquele mês.
+     */
     @GetMapping
     public ResponseEntity<DashboardGestorDTO> getDashboard(
             Authentication auth,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate inicio,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fim,
+            @RequestParam(required = false) String mes,
             @RequestParam(required = false) Long corretorId,
             @RequestParam(required = false) String origem,
-            @RequestParam(required = false) String status,
             @RequestParam(required = false) Long empreendimentoId
     ) {
-        String email = auth.getName();
-        LocalDateTime ini;
-        LocalDateTime fi;
-        if (inicio != null && fim != null && inicio.isAfter(fim)) {
-            throw new crm_imobiliario.back.util.RegraNegocioException("A data inicial deve ser igual ou anterior à data final.", "inicio", "INVALID_PERIOD");
+        LocalDateTime agora = LocalDateTime.now();
+        YearMonth mesAtual = YearMonth.from(agora);
+        YearMonth ym;
+        try {
+            ym = mes == null || mes.isBlank() ? mesAtual : YearMonth.parse(mes.trim());
+        } catch (java.time.format.DateTimeParseException e) {
+            throw new crm_imobiliario.back.util.RegraNegocioException("Informe o mês no formato AAAA-MM, por exemplo 2026-09.", "mes", "INVALID_MONTH");
         }
-        if (inicio != null && fim != null) {
-            ini = inicio.atStartOfDay();
-            fi = fim.atTime(LocalTime.MAX);
-        } else {
-            // padrão mês atual
-            LocalDate now = LocalDate.now();
-            ini = now.withDayOfMonth(1).atStartOfDay();
-            fi = now.withDayOfMonth(now.lengthOfMonth()).atTime(LocalTime.MAX);
+        if (ym.isAfter(mesAtual)) {
+            throw new crm_imobiliario.back.util.RegraNegocioException("Escolha um mês até o mês atual.", "mes", "INVALID_MONTH");
         }
-        DashboardGestorDTO dto = dashboardService.getDashboard(email, ini, fi, corretorId, origem, status, empreendimentoId);
-        return ResponseEntity.ok(dto);
+        return ResponseEntity.ok(dashboardService.getDashboard(auth.getName(), ym, agora, corretorId, origem, empreendimentoId));
     }
 
     @GetMapping("/equipe")

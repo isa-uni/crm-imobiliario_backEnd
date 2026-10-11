@@ -24,6 +24,7 @@ public interface LeadRepository extends JpaRepository<Lead, Long>, JpaSpecificat
     /** Leads criados no intervalo (inclusivo) — o dashboard do gestor filtra no banco em vez de carregar a base inteira. */
     List<Lead> findByDataCriacaoBetween(LocalDateTime inicio, LocalDateTime fim);
     List<Lead> findByCorretorId(Long corretorId);
+    List<Lead> findByCorretorIdIn(java.util.Collection<Long> corretorIds);
     org.springframework.data.domain.Page<Lead> findByCorretorId(Long corretorId, org.springframework.data.domain.Pageable pageable);
     List<Lead> findByEquipeId(Long equipeId);
     org.springframework.data.domain.Page<Lead> findByEquipeId(Long equipeId, org.springframework.data.domain.Pageable pageable);

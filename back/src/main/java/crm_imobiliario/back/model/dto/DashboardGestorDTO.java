@@ -14,6 +14,7 @@ import lombok.Setter;
 @AllArgsConstructor
 @Builder
 public class DashboardGestorDTO {
+    private String mesReferencia; // yyyy-MM
     private KpiDTO kpis;
     private List<PipelineEtapaDTO> pipeline;
     private List<RankingCorretorDTO> rankingCorretores;
@@ -44,9 +45,14 @@ public class DashboardGestorDTO {
     public static class PipelineEtapaDTO {
         private String status;
         private String label;
-        private long quantidade;
-        private double percentual;
-        private double valorPotencial;
+        private long quantidade;          // clientes que chegaram até esta etapa ou além (mesma regra do Relógio de Vendas)
+        private double percentual;        // em relação à primeira etapa (Leads)
+        private double valorPotencial;    // valor dos clientes em andamento parados nesta etapa; em Fechado, o valor vendido no mês
+        private long emAndamento;
+        private long contratosNoMes;
+        private long descartadosNoMes;
+        private long descartesNestaEtapa; // descartes do mês em que o cliente estava nesta etapa
+        private List<RelogioVendasDTO.MesCadastro> porMesCadastro;
     }
 
     @Getter @Setter @NoArgsConstructor @AllArgsConstructor @Builder
@@ -55,7 +61,7 @@ public class DashboardGestorDTO {
         private String nome;
         private long leads;
         private long contatos; // tramitacoes count
-        private long propostas; // status visita-realizada/pasta/aprovado
+        private long propostas; // clientes que chegaram a Oportunidade ou além
         private long negocios;
         private double conversao;
         private String statusAtencao; // "ok", "atencao", "critico"

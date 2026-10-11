@@ -285,13 +285,16 @@ class SegurancaEndpointsTest {
     }
 
     @Test
-    void periodoComDataInicialDepoisDaFinalERecusado() throws Exception {
+    void mesInvalidoOuFuturoNoDashboardERecusado() throws Exception {
         Usuario gestor = criarUsuario("gestor", false);
-        mockMvc.perform(get("/dashboard/gestor").param("inicio", "2026-10-31").param("fim", "2026-10-01")
-                        .header("Authorization", bearer(gestor)))
+        mockMvc.perform(get("/dashboard/gestor").param("mes", "setembro").header("Authorization", bearer(gestor)))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("INVALID_PERIOD"))
-                .andExpect(jsonPath("$.fields.inicio").value("A data inicial deve ser igual ou anterior à data final."));
+                .andExpect(jsonPath("$.code").value("INVALID_MONTH"))
+                .andExpect(jsonPath("$.fields.mes").value("Informe o mês no formato AAAA-MM, por exemplo 2026-09."));
+        String proximo = java.time.YearMonth.now().plusMonths(1).toString();
+        mockMvc.perform(get("/dashboard/gestor").param("mes", proximo).header("Authorization", bearer(gestor)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.fields.mes").value("Escolha um mês até o mês atual."));
     }
 
     // ---------------------------------------------------------------- login de usuário inativado
