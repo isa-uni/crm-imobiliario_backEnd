@@ -352,6 +352,17 @@ public class LeadsService {
         };
     }
 
+    /**
+     * Gestor escolhe entre os próprios clientes ("meus") e os da equipe ("equipe" ou nulo, o padrão
+     * da API). Para os demais papéis não muda nada: o escopo já é definido por {@link #specEscopo}.
+     */
+    private Specification<Lead> specSomenteMeus(Usuario solicitante, String escopo) {
+        return (root, query, cb) -> {
+            if (!"meus".equalsIgnoreCase(escopo) || !"gestor".equals(papelDe(solicitante))) return cb.conjunction();
+            return cb.equal(root.get("corretor").get("id"), solicitante.getId());
+        };
+    }
+
     /** Filtros dos cabeçalhos da tabela de Leads. */
     private Specification<Lead> specColunas(LeadFiltroColunas f) {
         return (root, query, cb) -> {
@@ -463,16 +474,17 @@ public class LeadsService {
     }
 
     public Page<LeadListaDTO> findPaginated(int page, int size, Sort sort, String search, String status, String month) {
-        return findPaginated(page, size, sort, search, status, month, LeadFiltroColunas.VAZIO);
+        return findPaginated(page, size, sort, search, status, month, LeadFiltroColunas.VAZIO, null);
     }
 
     public Page<LeadListaDTO> findPaginated(int page, int size, Sort sort, String search, String status, String month,
-                                            LeadFiltroColunas colunas) {
+                                            LeadFiltroColunas colunas, String escopo) {
         int p = Math.max(0, page);
         int s = Math.min(Math.max(1, size), 100);
         Usuario solicitante = usuarioLogado();
         if (solicitante == null) throw new AccessDeniedException("Sua sessão expirou. Faça login novamente.");
         Specification<Lead> spec = Specification.where(specEscopo(solicitante))
+                .and(specSomenteMeus(solicitante, escopo))
                 .and(specSearch(search))
                 .and(specStatus(status))
                 .and(specMonth(month))
@@ -496,9 +508,14 @@ public class LeadsService {
      * escopo do usuário — antes o front contava só os 20 leads da página visível.
      */
     public java.util.Map<String, Long> resumo() {
+        return resumo(null);
+    }
+
+    /** @param escopoGestor "meus" ou "equipe" (só faz diferença para gestor; ver specSomenteMeus) */
+    public java.util.Map<String, Long> resumo(String escopoGestor) {
         Usuario solicitante = usuarioLogado();
         if (solicitante == null) throw new AccessDeniedException("Sua sessão expirou. Faça login novamente.");
-        Specification<Lead> escopo = Specification.where(specEscopo(solicitante));
+        Specification<Lead> escopo = Specification.where(specEscopo(solicitante)).and(specSomenteMeus(solicitante, escopoGestor));
         return java.util.Map.of(
                 "total", leadRepository.count(escopo),
                 "ativos", leadRepository.count(escopo.and(specStatus("active"))),

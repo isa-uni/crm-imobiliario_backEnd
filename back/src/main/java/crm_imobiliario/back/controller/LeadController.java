@@ -58,6 +58,8 @@ public class LeadController {
             @RequestParam(required = false) String responsavel,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dataDe,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dataAte,
+            // gestor: "meus" (só os clientes dele) ou "equipe" (padrão)
+            @RequestParam(required = false) String escopo,
             org.springframework.security.core.Authentication authentication) {
         // sem paginação → compatível com callers legados (dashboard, etc.)
         if (page == null && size == null && search == null && status == null && month == null && sort == null) {
@@ -74,7 +76,7 @@ public class LeadController {
             throw new RegraNegocioException("A data inicial não pode ser depois da data final.", "dataDe", "INVALID_RANGE");
         }
         LeadFiltroColunas colunas = new LeadFiltroColunas(nome, contato, etapas, origens, valorMin, valorMax, responsavel, dataDe, dataAte);
-        Page<LeadListaDTO> pg = leadService.findPaginated(p, s, sd, search, status, month, colunas);
+        Page<LeadListaDTO> pg = leadService.findPaginated(p, s, sd, search, status, month, colunas, escopo);
         return ResponseEntity.ok(pg);
     }
 
@@ -122,8 +124,8 @@ public class LeadController {
      * tramitação e o histórico de responsáveis (que têm FK para o lead).
      */
     @GetMapping("/resumo")
-    public ResponseEntity<java.util.Map<String, Long>> resumo() {
-        return ResponseEntity.ok(leadService.resumo());
+    public ResponseEntity<java.util.Map<String, Long>> resumo(@RequestParam(required = false) String escopo) {
+        return ResponseEntity.ok(leadService.resumo(escopo));
     }
 
     @GetMapping("/metrics")

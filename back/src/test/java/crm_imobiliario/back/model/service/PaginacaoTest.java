@@ -299,4 +299,43 @@ class PaginacaoTest {
         mockMvc.perform(get("/leads").param("page", "0").param("size", "10").param("dataDe", "2026-10-05").param("dataAte", "2026-10-01").header("Authorization", auth))
                 .andExpect(status().isBadRequest());
     }
+
+    @Test
+    void leads_gestorEscolheEntreOsDeleEOsDaEquipe() throws Exception {
+        Usuario gestor = usuario("gestor", "Gestor Escopo", true);
+        Equipe eq = new Equipe();
+        eq.setNome("Equipe Escopo " + SEQ.incrementAndGet());
+        eq.setGestor(gestor);
+        eq = equipeRepository.save(eq);
+        gestor.setEquipe(eq);
+        usuarioRepository.save(gestor);
+        Usuario corretor = usuario("corretor", "Corretor Escopo", true);
+        corretor.setGestor(gestor);
+        corretor.setEquipe(eq);
+        usuarioRepository.save(corretor);
+        lead(gestor, "Cliente do Gestor", "lead");
+        lead(corretor, "Cliente do Corretor", "contrato");
+        String auth = bearer(gestor);
+
+        // padrão da API (e "equipe"): a equipe inteira, inclusive os clientes do próprio gestor
+        for (String escopo : new String[] { null, "equipe" }) {
+            var req = get("/leads").param("page", "0").param("size", "10").param("sort", "nome,asc").header("Authorization", auth);
+            if (escopo != null) req = req.param("escopo", escopo);
+            mockMvc.perform(req).andExpect(jsonPath("$.content[*].nome", contains("Cliente do Corretor", "Cliente do Gestor")));
+        }
+        mockMvc.perform(get("/leads").param("page", "0").param("size", "10").param("escopo", "meus").header("Authorization", auth))
+                .andExpect(jsonPath("$.content[*].nome", contains("Cliente do Gestor")));
+
+        // cards do resumo seguem o mesmo escopo
+        mockMvc.perform(get("/leads/resumo").param("escopo", "meus").header("Authorization", auth))
+                .andExpect(jsonPath("$.total").value(1))
+                .andExpect(jsonPath("$.contratos").value(0));
+        mockMvc.perform(get("/leads/resumo").param("escopo", "equipe").header("Authorization", auth))
+                .andExpect(jsonPath("$.total").value(2))
+                .andExpect(jsonPath("$.contratos").value(1));
+
+        // para o corretor o parâmetro não muda nada
+        mockMvc.perform(get("/leads").param("page", "0").param("size", "10").param("escopo", "equipe").header("Authorization", bearer(corretor)))
+                .andExpect(jsonPath("$.content[*].nome", contains("Cliente do Corretor")));
+    }
 }
