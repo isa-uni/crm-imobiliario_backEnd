@@ -57,7 +57,7 @@ public class DashboardGestorService {
 
     private static final Map<String,String> PIPELINE_LABELS = Map.of(
             "lead","Clientes no mês",
-            "oportunidade","Em atendimento",
+            "oportunidade","Oportunidade",
             "visita-agendada","Visita agendada",
             "visita-realizada","Visita realizada",
             "pasta","Pasta",
