@@ -305,7 +305,10 @@ public class DashboardGestorService {
                     .leads(total).contatos(contatosPorCorretor.getOrDefault(u.getId(), 0L)).propostas(oportunidades).negocios(negocios)
                     .conversao(conv).statusAtencao(atencao).build());
         }
-        lista.sort((a, b) -> Long.compare(b.getNegocios(), a.getNegocios()));
+        // mais contratos primeiro; no empate, quem tem mais clientes no mês; depois o nome (ordem estável)
+        lista.sort(Comparator.comparingLong(DashboardGestorDTO.RankingCorretorDTO::getNegocios).reversed()
+                .thenComparing(Comparator.comparingLong(DashboardGestorDTO.RankingCorretorDTO::getLeads).reversed())
+                .thenComparing(r -> r.getNome() != null ? r.getNome().toLowerCase() : ""));
         return lista;
     }
 
@@ -402,8 +405,12 @@ public class DashboardGestorService {
                 .mediaGeralDias(mediaDias(contratos)).porCorretor(porCorr).build();
     }
 
+    /**
+     * Clientes na contagem do mês por origem. A conversão usa a regra única do painel: contratos fechados
+     * no mês ÷ clientes na contagem do mês (os contratos estão dentro da contagem, então nunca passa de 100%).
+     */
     private List<DashboardGestorDTO.OrigemDTO> calcularOrigens(Mes atual) {
-        List<Avaliado> recebidos = atual.recebidos();
+        List<Avaliado> recebidos = atual.naContagem();
         long total = recebidos.size();
         String semOrigem = "sem_origem";
         Map<String, List<Avaliado>> recebidosPorOrigem = recebidos.stream()
@@ -451,7 +458,8 @@ public class DashboardGestorService {
     private List<DashboardGestorDTO.EmpreendimentoInteresseDTO> calcularEmpreendimentos(Mes atual) {
         Map<Long, String> nomes = new HashMap<>();
         Map<Long, List<Avaliado>> interessados = new HashMap<>();
-        for (Avaliado a : atual.recebidos()) {
+        // interessados = clientes na contagem do mês (mesma base da conversão do painel)
+        for (Avaliado a : atual.naContagem()) {
             if (a.lead().getEmpreendimento() == null) continue;
             interessados.computeIfAbsent(a.lead().getEmpreendimento().getId(), k -> new ArrayList<>()).add(a);
             nomes.putIfAbsent(a.lead().getEmpreendimento().getId(), a.lead().getEmpreendimento().getNome());

@@ -169,6 +169,26 @@ class DashboardTimelineTest {
                 .andExpect(jsonPath("$.timeline[*].leadsRecebidos", contains(2, 2)))
                 .andExpect(jsonPath("$.timeline[*].contratosFechados", contains(2, 1)));
 
+        // cards do Dashboard (mês atual) com a mesma regra e o mesmo escopo
+        mockMvc.perform(get("/dashboard/corretor/resumo").param("escopo", "equipe").header("Authorization", bearer(gestor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.escopo").value("equipe"))
+                .andExpect(jsonPath("$.clientesNoMes").value(3))          // reaberto (andamento), contrato e descarte do mês
+                .andExpect(jsonPath("$.emAndamento").value(1))            // o reaberto
+                .andExpect(jsonPath("$.emAndamentoMesAnterior").value(0)) // no fim do mês passado os dois estavam em contrato
+                .andExpect(jsonPath("$.contratos").value(1))
+                .andExpect(jsonPath("$.valorContratos").value(100_000.0))
+                .andExpect(jsonPath("$.conversao").value(closeTo(33.33, 0.01)))
+                .andExpect(jsonPath("$.contratosMesAnterior").value(2));
+        mockMvc.perform(get("/dashboard/corretor/resumo").header("Authorization", bearer(gestor)))
+                .andExpect(jsonPath("$.escopo").value("meus"))
+                .andExpect(jsonPath("$.clientesNoMes").value(0))
+                .andExpect(jsonPath("$.contratosMesAnterior").value(1));
+        mockMvc.perform(get("/dashboard/corretor/resumo").param("escopo", "equipe").header("Authorization", bearer(c1)))
+                .andExpect(jsonPath("$.escopo").value("meus"))
+                .andExpect(jsonPath("$.clientesNoMes").value(3))
+                .andExpect(jsonPath("$.contratos").value(1));
+
         // admin: todos
         timeline(admin, null)
                 .andExpect(jsonPath("$.escopo").value("todos"))

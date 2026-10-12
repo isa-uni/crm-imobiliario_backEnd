@@ -217,4 +217,28 @@ class DashboardGestorMesTest {
                 .andExpect(jsonPath("$[?(@.id == " + admin.getId() + ")]", hasSize(0)))
                 .andExpect(jsonPath("$[?(@.id == " + corretor.getId() + ")]", hasSize(1)));
     }
+
+    @Test
+    void rankingDesempataPelosClientesEConversaoPorOrigemNaoPassaDe100() throws Exception {
+        Usuario gestor = usuario("gestor", null);
+        Usuario poucos = usuario("corretor", gestor);
+        Usuario muitos = usuario("corretor", gestor);
+        // 1 contrato cada; "muitos" tem mais clientes no mês
+        lead(poucos, 100_000, null, "lead", null, "contrato", null);
+        lead(muitos, 100_000, null, "lead", null, "contrato", null);
+        lead(muitos, 100_000, null, "lead", null);
+        lead(muitos, 100_000, null, "lead", null);
+        // cadastrado no mês passado e fechado neste mês, de uma origem sem cadastros neste mês
+        Lead antigo = lead(muitos, 100_000, dia(10), "lead", dia(10), "contrato", null);
+        antigo.setOrigem("oferta_ativa");
+        leadRepository.save(antigo);
+
+        mockMvc.perform(get("/dashboard/gestor").header("Authorization", bearer(gestor)))
+                .andExpect(jsonPath("$.rankingCorretores[0].corretorId").value(muitos.getId()))
+                .andExpect(jsonPath("$.rankingCorretores[1].corretorId").value(poucos.getId()))
+                // antes: 1 contrato ÷ 0 cadastrados no mês; agora a base é a contagem do mês
+                .andExpect(jsonPath("$.origens[?(@.origem == 'oferta_ativa')].quantidade").value(contains(1)))
+                .andExpect(jsonPath("$.origens[?(@.origem == 'oferta_ativa')].taxaConversao").value(contains(100.0)))
+                .andExpect(jsonPath("$.origens[*].taxaConversao", everyItem(lessThanOrEqualTo(100.0))));
+    }
 }

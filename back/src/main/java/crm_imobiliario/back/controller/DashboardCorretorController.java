@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import crm_imobiliario.back.model.dto.DashboardCorretorResumoDTO;
 import crm_imobiliario.back.model.dto.DashboardCorretorTimelineDTO;
 import crm_imobiliario.back.model.service.DashboardCorretorService;
 
@@ -22,6 +23,12 @@ public class DashboardCorretorController {
 
     @Autowired
     private DashboardCorretorService dashboardCorretorService;
+
+    /** Cards do mês do Dashboard: contratos, valor e conversão pela regra única. Gestor: escopo "meus" (padrão) ou "equipe". */
+    @GetMapping("/resumo")
+    public ResponseEntity<DashboardCorretorResumoDTO> getResumo(Authentication auth, @RequestParam(required = false) String escopo) {
+        return ResponseEntity.ok(dashboardCorretorService.getResumo(auth.getName(), escopo, LocalDateTime.now()));
+    }
 
     @GetMapping("/timeline")
     public ResponseEntity<DashboardCorretorTimelineDTO> getTimeline(
