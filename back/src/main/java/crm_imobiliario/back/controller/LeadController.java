@@ -128,6 +128,12 @@ public class LeadController {
         return ResponseEntity.ok(leadService.resumo(escopo));
     }
 
+    /** Meses (AAAA-MM) com cliente cadastrado no escopo do usuário — opções do filtro de período. */
+    @GetMapping("/meses")
+    public ResponseEntity<List<String>> meses() {
+        return ResponseEntity.ok(leadService.mesesComCadastro());
+    }
+
     @GetMapping("/metrics")
     public ResponseEntity<MetricsDTO> getMetrics(org.springframework.security.core.Authentication authentication) {
         return ResponseEntity.ok(leadService.getMetrics());

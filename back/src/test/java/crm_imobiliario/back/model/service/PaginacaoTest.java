@@ -206,6 +206,34 @@ class PaginacaoTest {
     }
 
     @Test
+    void leads_mesesComCadastroEFiltroPorMesEspecifico() throws Exception {
+        Usuario corretor = usuario("corretor", "Corretor Meses", true);
+        Usuario outro = usuario("corretor", "Corretor Outro Mes", true);
+        java.time.YearMonth atual = java.time.YearMonth.now();
+        java.time.YearMonth anterior = atual.minusMonths(1);
+        lead(corretor, "Cliente Mes Atual", "lead");
+        Lead doMesAnterior = lead(corretor, "Cliente Mes Anterior", "oportunidade");
+        jdbc.update("UPDATE lead SET data_criacao = ? WHERE id = ?", Timestamp.valueOf(anterior.atDay(15).atTime(10, 0)), doMesAnterior.getId());
+        // de outro corretor, três meses atrás: não aparece para o primeiro
+        Lead deOutro = lead(outro, "Cliente Outro", "lead");
+        jdbc.update("UPDATE lead SET data_criacao = ? WHERE id = ?", Timestamp.valueOf(atual.minusMonths(3).atDay(5).atTime(10, 0)), deOutro.getId());
+
+        mockMvc.perform(get("/leads/meses").header("Authorization", bearer(corretor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$", contains(atual.toString(), anterior.toString())));
+
+        mockMvc.perform(get("/leads").param("page", "0").param("size", "10").param("month", anterior.toString())
+                        .header("Authorization", bearer(corretor)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].nome").value("Cliente Mes Anterior"));
+
+        mockMvc.perform(get("/leads").param("page", "0").param("size", "10").param("month", "setembro")
+                        .header("Authorization", bearer(corretor)))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void leads_buscaPorNomeTelefoneEEmail() throws Exception {
         Usuario corretor = usuario("corretor", "Corretor Busca Leads", true);
         Lead maria = lead(corretor, "Maria Buscável", "lead");

@@ -334,8 +334,29 @@ public class LeadsService {
                 LocalDateTime end = start.plusMonths(1);
                 return cb.and(cb.greaterThanOrEqualTo(root.get("dataCriacao"), start), cb.lessThan(root.get("dataCriacao"), end));
             }
-            return cb.conjunction();
+            // mês específico de cadastro: "2026-09"
+            java.time.YearMonth ym;
+            try {
+                ym = java.time.YearMonth.parse(month.trim());
+            } catch (java.time.format.DateTimeParseException e) {
+                throw new RegraNegocioException("O período \"" + month + "\" não é válido. Use o formato AAAA-MM (ex.: 2026-09).", "month", "INVALID_MONTH");
+            }
+            LocalDateTime start = ym.atDay(1).atStartOfDay();
+            return cb.and(cb.greaterThanOrEqualTo(root.get("dataCriacao"), start), cb.lessThan(root.get("dataCriacao"), start.plusMonths(1)));
         };
+    }
+
+    /** Meses (AAAA-MM, do mais recente ao mais antigo) com cliente cadastrado no escopo do usuário — opções do filtro de período. */
+    public List<String> mesesComCadastro() {
+        Usuario solicitante = usuarioLogado();
+        if (solicitante == null) throw new AccessDeniedException("Sua sessão expirou. Faça login novamente.");
+        return leadRepository.findAll(specEscopo(solicitante)).stream()
+                .map(Lead::getDataCriacao)
+                .filter(java.util.Objects::nonNull)
+                .map(d -> java.time.YearMonth.from(d).toString())
+                .distinct()
+                .sorted(java.util.Comparator.reverseOrder())
+                .toList();
     }
 
     private Specification<Lead> specOrigem(String origem) {
