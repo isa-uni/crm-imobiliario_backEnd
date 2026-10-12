@@ -83,11 +83,47 @@ public class MemorialTextExtractor {
     // Lista de lazer sob o rótulo "ÁREAS COMUNS" (uma linha por item, até a primeira linha vazia ou
     // que comece com "*" — que nos books reais é sempre a nota de rodapé "*Imagem meramente ilustrativa.")
     private static final Pattern AREAS_COMUNS_BLOCO = Pattern.compile(
-            "(?im)^\\s*[ÁA]REAS\\s+COMUNS\\s*$((?:\\R(?!\\s*$)(?!\\s*\\*).+)*)");
+            "(?im)^\\s*(?:[ÁA]REAS\\s+COMUNS|[ÁA]REAS\\s+DE\\s+LAZER|LAZER)\\s*:?\\s*$((?:\\R(?!\\s*$)(?!\\s*\\*).+)*)");
+
+    // Vocabulário de itens de lazer/áreas comuns — usado quando o book lista as áreas comuns sem o
+    // rótulo "ÁREAS COMUNS" (ex.: Book Solare, página 2: a lista vem logo após a nota "*O mercado é o
+    // único ambiente entregue..."). Só reconhece uma lista quando a maioria das linhas é desse vocabulário.
+    private static final Pattern VOCABULARIO_LAZER = Pattern.compile(
+            "(?i)guarita|portaria|biciclet|playground|brinquedoteca|quiosque|churrasqueira|quadra|pet\\s*place|pet\\b"
+                    + "|fitness|academia|piscina|sal[aã]o|espa[cç]o\\s+(gourmet|kids|zen|teen)|gourmet|mercado|lavanderia"
+                    + "|coworking|horta|red[aá]rio|sauna|estacionamento|deck|solarium|lounge|cinema|jogos|pomar|pista"
+                    + "|pra[cç]a|bosque|sport|beach");
 
     // "Colégio Estadual Cívico Militar (2 min)" — ponto de referência com tempo estimado até o local.
     private static final Pattern PONTO_REFERENCIA = Pattern.compile(
             "(?m)^\\s*([^\\n(]{3,70}?)\\s*\\((\\d{1,3})\\s*min\\)\\s*$");
+
+    // "UTFPR  6 min" / "BR 487  4 min" — a mesma lista do mapa, sem parênteses (Book Marbella).
+    // Só vale quando a página tem pelo menos 2 linhas assim (uma lista), para não pegar frase solta.
+    private static final Pattern PONTO_REFERENCIA_SEM_PARENTESES = Pattern.compile(
+            "(?m)^[ \\t]*([^\\n(]{3,70}?)[ \\t]+(\\d{1,3})[ \\t]*min\\.?[ \\t]*$");
+
+    // "Shopping Norte - 1,2 km" / "Escola Municipal (800 m)" — ponto de referência por distância.
+    private static final Pattern PONTO_REFERENCIA_DISTANCIA = Pattern.compile(
+            "(?m)^[ \\t]*([^\\n(]{3,70}?)[ \\t]*(?:[-–][ \\t]*|\\()(\\d{1,4}(?:,\\d{1,2})?)[ \\t]*(km|m)\\)?[ \\t]*$");
+
+    // Rótulo da seção de diferenciais sozinho na linha ("DIFERENCIAIS" / "Diferenciais").
+    private static final Pattern ROTULO_DIFERENCIAIS = Pattern.compile("(?i)^\\s*diferenciais\\s*$");
+
+    // O que caracteriza um item de diferencial do apartamento/condomínio nos books reais: torres,
+    // pavimentos, elevador, unidades por andar, vagas, acabamentos... Frases de marketing ("O lugar onde
+    // mora a felicidade") não casam e encerram a lista.
+    private static final Pattern TERMO_DIFERENCIAL = Pattern.compile(
+            "(?i)por\\s+andar|vagas?\\b|garagem|elevador|torres?\\b|pavimentos?|piso|porcelanato|sacada|varanda"
+                    + "|churrasqueira|aquec|g[aá]s\\s+(central|encanado|individual)|medi[cç][aã]o\\s+individual"
+                    + "|fechadura|ar[- ]condicionado|infraestrutura|tomadas?\\b|esquadria|laje|forro|gesso"
+                    + "|vista|energia\\s+solar|fotovoltaic|led\\b|reuso|jardim\\s+privativo|acessibilidade");
+    // Linhas que parecem diferencial mas são planta/rodapé: metragem, quartos, notas e avisos.
+    private static final Pattern NAO_DIFERENCIAL = Pattern.compile(
+            "(?i)m[²2]|\\bquartos?\\b|ilustrativ|consulte|memorial|n[aã]o\\s+s[aã]o\\s+entregues|^\\*");
+    // Palavra que, no fim de uma linha, indica que o item continua na linha de baixo ("Torres de" / "4 pavimentos").
+    private static final Pattern TERMINA_EM_CONECTIVO = Pattern.compile(
+            "(?i)\\b(de|do|da|dos|das|com|e|em|por|para|na|no|nas|nos|a|o|ao)$");
 
     // "Zona Norte de Londrina" / "Região Central de Maringá" — na página de localização/mapa (que nos
     // books reais vem logo após a lista de ÁREAS COMUNS), o empreendimento raramente tem o endereço
@@ -251,8 +287,83 @@ public class MemorialTextExtractor {
         }
         Matcher mBloco = DIFERENCIAIS_BLOCO.matcher(texto);
         if (mBloco.find()) {
-            adicionarDiferenciais(camposGerais, splitDiferenciais(mBloco.group(1), "\n"), mBloco.group(0), doc, pagina, 75);
+            // um item por linha; itens quebrados em duas linhas são juntados, e a lista termina na primeira
+            // linha que não é diferencial (no Book Felicce o slogan "O lugar onde / mora a felicidade." vem
+            // colado logo abaixo, sem linha em branco)
+            List<String> itens = itensDeDiferencial(java.util.Arrays.asList(mBloco.group(1).split("\\R")), true);
+            if (!itens.isEmpty()) {
+                adicionarDiferenciais(camposGerais, itens.toArray(String[]::new), mBloco.group(0), doc, pagina, 75);
+                return;
+            }
         }
+        // rótulo DEPOIS da lista: o PDFBox lê o título "Diferenciais" por último quando ele está à direita
+        // ou abaixo dos itens (Book Solare) — a lista é o que vem logo acima do rótulo
+        String[] linhas = texto.split("\\R");
+        for (int i = 0; i < linhas.length; i++) {
+            if (!ROTULO_DIFERENCIAIS.matcher(linhas[i]).matches()) continue;
+            java.util.LinkedList<String> acima = new java.util.LinkedList<>();
+            for (int j = i - 1; j >= 0; j--) {
+                String item = ultimoSegmento(linhas[j]);
+                if (item.isEmpty() || !ehDiferencial(item)) break;
+                acima.addFirst(item);
+            }
+            if (!acima.isEmpty()) {
+                String trecho = String.join("\n", acima) + "\n" + linhas[i].trim();
+                adicionarDiferenciais(camposGerais, acima.toArray(String[]::new), trecho, doc, pagina, 70);
+                return;
+            }
+        }
+    }
+
+    /**
+     * Diferenciais de um Book sem o rótulo "Diferenciais" (ex.: Book Marbella): nos books reais a página
+     * de diferenciais vem logo depois do mapa geral dos blocos (implantação). Chamado pelo orquestrador só
+     * para essa página, e só aceita as linhas que realmente descrevem um diferencial.
+     */
+    public void extrairDiferenciaisSemRotulo(String texto, EmpreendimentoDocumento doc, Integer pagina, Map<String, Object> camposGerais) {
+        if (camposGerais.containsKey("diferenciais")) return;
+        List<String> itens = itensDeDiferencial(java.util.Arrays.asList(texto.split("\\R")), false);
+        if (itens.size() < 2) return; // um item isolado pode ser só uma frase da planta
+        adicionarDiferenciais(camposGerais, itens.toArray(String[]::new), String.join("\n", itens), doc, pagina, 60);
+    }
+
+    /**
+     * Junta linhas quebradas ("4 apartamentos" + "por andar.") e devolve só os itens de diferencial.
+     * Com {@code pararNoPrimeiroInvalido}, a lista acaba no primeiro item que não é diferencial.
+     */
+    static List<String> itensDeDiferencial(List<String> linhas, boolean pararNoPrimeiroInvalido) {
+        List<String> juntas = new java.util.ArrayList<>();
+        for (String bruta : linhas) {
+            String linha = limparItem(bruta);
+            if (linha.isEmpty()) continue;
+            boolean continua = !juntas.isEmpty()
+                    && (Character.isLowerCase(linha.charAt(0)) || TERMINA_EM_CONECTIVO.matcher(juntas.get(juntas.size() - 1)).find())
+                    && !linha.startsWith("*");
+            if (continua) juntas.set(juntas.size() - 1, juntas.get(juntas.size() - 1) + " " + linha);
+            else juntas.add(linha);
+        }
+        List<String> itens = new java.util.ArrayList<>();
+        for (String j : juntas) {
+            String item = j.replaceAll("\\.+$", "").trim();
+            if (ehDiferencial(item)) itens.add(item);
+            else if (pararNoPrimeiroInvalido) break; // a lista começa logo abaixo do rótulo; o resto é outra coisa
+        }
+        return itens;
+    }
+
+    static boolean ehDiferencial(String item) {
+        return item.length() <= 100 && TERMO_DIFERENCIAL.matcher(item).find() && !NAO_DIFERENCIAL.matcher(item).find();
+    }
+
+    /** Remove marcadores ("●", "•", "-") e espaços; " " conta como espaço. */
+    private static String limparItem(String linha) {
+        return linha.replace(' ', ' ').replaceFirst("^[\\s●•▪·\\-–]+", "").trim().replaceAll("\\s{2,}", " ");
+    }
+
+    /** "…informações detalhadas.  4 unidades por andar" → "4 unidades por andar" (texto vizinho colado na mesma linha). */
+    private static String ultimoSegmento(String linha) {
+        String[] partes = linha.replace(' ', ' ').trim().split("\\s{2,}");
+        return limparItem(partes[partes.length - 1]).replaceAll("\\.+$", "").trim();
     }
 
     private String[] splitDiferenciais(String bruto, String separador) {
@@ -350,23 +461,111 @@ public class MemorialTextExtractor {
         if (!lista.isEmpty()) camposGerais.put("areas_comuns", lista);
     }
 
+    /**
+     * Áreas comuns de um Book sem o rótulo "ÁREAS COMUNS" (ex.: Book Solare): procura na página uma
+     * lista de linhas curtas seguidas em que a maioria é item de lazer conhecido (guarita, playground,
+     * quiosque...). Chamado pelo orquestrador, a partir das primeiras páginas do book.
+     */
+    public void extrairAreasComunsSemRotulo(String texto, EmpreendimentoDocumento doc, Integer pagina, Map<String, Object> camposGerais) {
+        if (camposGerais.containsKey("areas_comuns")) return;
+        List<String> melhor = List.of();
+        List<String> atual = new java.util.ArrayList<>();
+        for (String bruta : (texto + "\n.").split("\\R")) { // "." final fecha a última lista
+            String linha = limparItem(bruta);
+            if (linha.isEmpty()) continue; // o PDFBox às vezes põe linha em branco entre itens espaçados
+            boolean itemCurto = linha.length() <= 50 && !linha.startsWith("*")
+                    && !linha.endsWith(".") && linha.split(" ").length <= 7;
+            if (itemCurto) { atual.add(linha); continue; }
+            if (listaDeLazer(atual) && atual.size() > melhor.size()) melhor = atual;
+            atual = new java.util.ArrayList<>();
+        }
+        if (melhor.isEmpty()) return;
+        var lista = new java.util.ArrayList<Map<String, Object>>();
+        String trecho = String.join("\n", melhor);
+        for (String nome : melhor) {
+            Map<String, Object> a = new LinkedHashMap<>();
+            a.put("nome", campo(nome, 65, trecho, doc, pagina));
+            lista.add(a);
+        }
+        camposGerais.put("areas_comuns", lista);
+    }
+
+    private static boolean listaDeLazer(List<String> linhas) {
+        if (linhas.size() < 3) return false;
+        long conhecidas = linhas.stream().filter(l -> VOCABULARIO_LAZER.matcher(l).find()).count();
+        return conhecidas >= 3 && conhecidas * 10 >= linhas.size() * 7; // pelo menos 70% da lista
+    }
+
+    @SuppressWarnings("unchecked")
     private void extrairPontosReferencia(String texto, EmpreendimentoDocumento doc, Integer pagina, Map<String, Object> camposGerais) {
-        Matcher m = PONTO_REFERENCIA.matcher(texto);
         var existentes = (java.util.List<?>) camposGerais.get("pontos_referencia");
         var lista = existentes != null
                 ? new java.util.ArrayList<Map<String, Object>>((java.util.List<Map<String, Object>>) (java.util.List<?>) existentes)
                 : new java.util.ArrayList<Map<String, Object>>();
-        boolean encontrouAlgum = false;
+        java.util.Set<String> vistos = new java.util.HashSet<>();
+        for (Map<String, Object> p : lista) vistos.add(chaveNome(valorDe(p.get("nome"))));
+        int antes = lista.size();
+
+        // "Nome (2 min)" vale sozinho; os formatos sem parênteses só valem em lista (2+ na mesma página)
+        adicionarPontos(PONTO_REFERENCIA.matcher(texto), 1, false, lista, vistos, doc, pagina, 75);
+        adicionarPontos(PONTO_REFERENCIA_SEM_PARENTESES.matcher(texto), 2, false, lista, vistos, doc, pagina, 70);
+        adicionarPontos(PONTO_REFERENCIA_DISTANCIA.matcher(texto), 2, true, lista, vistos, doc, pagina, 70);
+
+        if (lista.size() > antes) camposGerais.put("pontos_referencia", lista);
+    }
+
+    private void adicionarPontos(Matcher m, int minimoNaPagina, boolean porDistancia, List<Map<String, Object>> lista,
+                                 java.util.Set<String> vistos, EmpreendimentoDocumento doc, Integer pagina, int confianca) {
+        List<Map<String, Object>> novos = new java.util.ArrayList<>();
+        java.util.Set<String> vistosAqui = new java.util.HashSet<>();
         while (m.find()) {
-            String nome = m.group(1).trim();
-            if (nome.isBlank() || nome.length() > 80) continue;
+            String nome = m.group(1).trim().replaceAll("[\\s\\-–:]+$", "");
+            String chave = chaveNome(nome);
+            if (nome.length() < 3 || nome.length() > 80 || !nome.matches(".*\\p{L}.*")) continue;
+            if (vistos.contains(chave) || !vistosAqui.add(chave)) continue;
             Map<String, Object> p = new LinkedHashMap<>();
-            p.put("nome", campo(nome, 75, m.group(0), doc, pagina));
-            p.put("tempo", campo(m.group(2), 75, m.group(0), doc, pagina));
-            lista.add(p);
-            encontrouAlgum = true;
+            p.put("nome", campo(nome, confianca, m.group(0).trim(), doc, pagina));
+            if (porDistancia) {
+                p.put("distancia", campo(m.group(2), confianca, m.group(0).trim(), doc, pagina));
+                p.put("unidade", campo(m.group(3).toLowerCase(java.util.Locale.ROOT), confianca, m.group(0).trim(), doc, pagina));
+            } else {
+                p.put("tempo", campo(m.group(2), confianca, m.group(0).trim(), doc, pagina));
+            }
+            String categoria = categoriaDoPonto(nome);
+            if (categoria != null) p.put("categoria", campo(categoria, confianca, m.group(0).trim(), doc, pagina));
+            novos.add(p);
         }
-        if (encontrouAlgum) camposGerais.put("pontos_referencia", lista);
+        if (novos.size() < minimoNaPagina) return;
+        lista.addAll(novos);
+        vistos.addAll(vistosAqui);
+    }
+
+    private static final Pattern CAT_SAUDE = Pattern.compile("saude|\\bubs\\b|hospital|\\bupa\\b|clinica|farmacia|drogaria|pronto[- ]atendimento");
+    private static final Pattern CAT_EDUCACAO = Pattern.compile("escola|colegio|\\bcei\\b|\\bcmei\\b|creche|faculdade|universidade|utfpr|\\buel\\b|unopar|unicesumar|\\bifpr\\b|senai|sesi|ensino");
+    private static final Pattern CAT_COMPRAS = Pattern.compile("mercado|muffato|condor|feira|atacad|hiper|padaria|\\bsuper\\b|shopping|loja|comercio|tonhao");
+    private static final Pattern CAT_TRANSPORTE = Pattern.compile("terminal|onibus|rodovia|\\brod\\b|\\bbr[ -]?\\d|\\bpr[ -]?\\d|^av\\b|^av\\.|avenida|aeroporto|rodoviaria|estacao|centro\\b");
+    private static final Pattern CAT_LAZER = Pattern.compile("parque|praca|lago|bosque|clube|estadio|igreja|catedral");
+
+    /** Categoria do ponto pelo nome — a tela agrupa e mostra um ícone por categoria. Null se não reconhecer. */
+    static String categoriaDoPonto(String nome) {
+        String n = java.text.Normalizer.normalize(nome, java.text.Normalizer.Form.NFD).replaceAll("\\p{M}", "").toLowerCase(java.util.Locale.ROOT);
+        if (CAT_SAUDE.matcher(n).find()) return "Saúde";
+        if (CAT_EDUCACAO.matcher(n).find()) return "Educação";
+        if (CAT_COMPRAS.matcher(n).find()) return "Compras";
+        if (CAT_LAZER.matcher(n).find()) return "Lazer";
+        if (CAT_TRANSPORTE.matcher(n).find()) return "Transporte";
+        return null;
+    }
+
+    private static String chaveNome(String nome) {
+        if (nome == null) return "";
+        return java.text.Normalizer.normalize(nome, java.text.Normalizer.Form.NFD).replaceAll("\\p{M}", "")
+                .toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9]+", " ").trim();
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String valorDe(Object campo) {
+        return campo instanceof Map<?, ?> m && m.get("valor") != null ? String.valueOf(m.get("valor")) : null;
     }
 
     private java.math.BigDecimal parseDecimalBr(String valor) {

@@ -541,4 +541,165 @@ class MemorialTextExtractorTest {
 
         assertTrue(campos.isEmpty(), "texto puramente publicitário não deve gerar nenhum campo inventado");
     }
+
+    @SuppressWarnings("unchecked")
+    private List<String> lista(Map<String, Object> campos, String chave, String sub) {
+        List<Map<String, Object>> itens = (List<Map<String, Object>>) campos.get(chave);
+        return itens == null ? List.of() : itens.stream().map(i -> valor(sub(i, sub))).toList();
+    }
+
+    @Test
+    void diferenciaisParamNoSloganColadoAbaixoDaLista() {
+        // Book Felicce, p.12: o slogan vem logo abaixo da lista, sem linha em branco
+        String texto = "Com opções de jardim privativo\r\n" +
+                "DIFERENCIAIS\r\n" +
+                " 4 unidades por andar\r\n" +
+                "Torres com elevador  \r\n" +
+                "1 vaga de garagem por apartamento  \r\n" +
+                "Piso cerâmico nas áreas molhadas\r\n" +
+                "O lugar onde \r\n" +
+                "mora a felicidade.\r\n";
+        Map<String, Object> campos = new LinkedHashMap<>();
+        extractor.extrair(texto, doc("book.pdf"), 12, campos, new java.util.ArrayList<>());
+
+        assertEquals(List.of("4 unidades por andar", "Torres com elevador", "1 vaga de garagem por apartamento",
+                "Piso cerâmico nas áreas molhadas"), lista(campos, "diferenciais", "titulo"));
+    }
+
+    @Test
+    void diferenciaisComRotuloDepoisDaLista() {
+        // Book Solare, p.14: o PDFBox lê o título "Diferenciais" depois dos itens; o primeiro item vem
+        // colado na nota de rodapé, na mesma linha
+        String texto = "* As unidades não são entregues com piso laminado. Imagem meramente \r\n" +
+                "ilustrativa. Consulte memorial descritivo para informações detalhadas.  4 unidades por andar\r\n" +
+                "Torres altas com vista privilegiada\r\n" +
+                "Elevador\r\n" +
+                "1 vaga de garagem por apartamento  \r\n" +
+                "Piso cerâmico nas áreas molhadas  \r\n" +
+                "Diferenciais\r\n" +
+                "2 QUARTOS\r\n" +
+                "Apartamento\r\n" +
+                "35,82m2\r\n" +
+                "Com opções de jardim privativo\r\n";
+        Map<String, Object> campos = new LinkedHashMap<>();
+        extractor.extrair(texto, doc("book.pdf"), 14, campos, new java.util.ArrayList<>());
+
+        assertEquals(List.of("4 unidades por andar", "Torres altas com vista privilegiada", "Elevador",
+                "1 vaga de garagem por apartamento", "Piso cerâmico nas áreas molhadas"), lista(campos, "diferenciais", "titulo"));
+    }
+
+    @Test
+    void diferenciaisSemRotuloJuntamItensQuebradosEmDuasLinhas() {
+        // Book Marbella, p.12 (página depois do mapa dos blocos): sem rótulo, cada item quebrado em duas linhas
+        String texto = "O espaço extra ao ar livre \r\n" +
+                "que sua família merece \r\n" +
+                "para viver bem. \r\n" +
+                "* As unidades não são entregues com piso laminado. Imagem meramente ilustrativa. \r\n" +
+                "35,81m² \r\n" +
+                "Apartamento\r\n" +
+                "2 Quartos\r\n" +
+                "com jardim privativo \r\n" +
+                "4 apartamentos \r\n" +
+                "por andar. \r\n" +
+                "1 vaga de garagem \r\n" +
+                "por apartamento. \r\n" +
+                "Torres de \r\n" +
+                "4 pavimentos \r\n" +
+                "Piso cerâmico \r\n" +
+                "nas áreas molhadas. \r\n" +
+                "*Imagem meramente ilustrativa. \r\n";
+        Map<String, Object> campos = new LinkedHashMap<>();
+        extractor.extrairDiferenciaisSemRotulo(texto, doc("book.pdf"), 12, campos);
+
+        assertEquals(List.of("4 apartamentos por andar", "1 vaga de garagem por apartamento", "Torres de 4 pavimentos",
+                "Piso cerâmico nas áreas molhadas"), lista(campos, "diferenciais", "titulo"));
+    }
+
+    @Test
+    void diferenciaisSemRotuloNaoInventamNadaEmPaginaPublicitaria() {
+        Map<String, Object> campos = new LinkedHashMap<>();
+        extractor.extrairDiferenciaisSemRotulo("SALA DE ESTAR\r\nOnde há família reunida, \r\nhá belas histórias.\r\n",
+                doc("book.pdf"), 13, campos);
+        assertFalse(campos.containsKey("diferenciais"));
+    }
+
+    @Test
+    void areasComunsSemRotuloReconhecidasPeloVocabularioDeLazer() {
+        // Book Solare, p.2: lista sem o rótulo "ÁREAS COMUNS", logo depois de uma nota
+        String texto = "E essa é apenas a primeira de muitas novidades que vêm por aí.\r\n" +
+                "*O mercado é o único ambiente entregue apenas com a infraestrutura. \r\n" +
+                "As demais áreas são entregues equipadas e decoradas. \r\n" +
+                "Guarita\r\n" +
+                "Bicicletário\r\n" +
+                "Playground\r\n" +
+                "2 Quiosques com Churrasqueira (duplo) \r\n" +
+                "Quadra de Areia\r\n" +
+                "Pet Place\r\n" +
+                "Fitness Externo\r\n" +
+                "Mercado compartilhado  \r\n" +
+                "*Imagem meramente ilustrativa. \r\n";
+        Map<String, Object> campos = new LinkedHashMap<>();
+        extractor.extrairAreasComunsSemRotulo(texto, doc("book.pdf"), 2, campos);
+
+        assertEquals(List.of("Guarita", "Bicicletário", "Playground", "2 Quiosques com Churrasqueira (duplo)",
+                "Quadra de Areia", "Pet Place", "Fitness Externo", "Mercado compartilhado"), lista(campos, "areas_comuns", "nome"));
+    }
+
+    @Test
+    void areasComunsSemRotuloIgnoramPaginaDeUmAmbienteSo() {
+        Map<String, Object> campos = new LinkedHashMap<>();
+        extractor.extrairAreasComunsSemRotulo("*Imagem meramente ilustrativa. \r\nGUARITA \r\nSegurança e tranquilidade \r\n",
+                doc("book.pdf"), 4, campos);
+        assertFalse(campos.containsKey("areas_comuns"));
+    }
+
+    @Test
+    void pontosDeReferenciaSemParentesesComCategoria() {
+        // Book Marbella, p.3: "UTFPR  6 min" — sem parênteses
+        String texto = "R. Roberto Brzezinski\r\n" +
+                "UTFPR  6 min  \r\n" +
+                "Praça Central  5 min  \r\n" +
+                "Supermercado Bom Dia  8 min  \r\n" +
+                "BR 487  4 min  \r\n" +
+                "COAMO Pq. Industrial  8 min  \r\n";
+        Map<String, Object> campos = new LinkedHashMap<>();
+        extractor.extrair(texto, doc("book.pdf"), 3, campos, new java.util.ArrayList<>());
+
+        assertEquals(List.of("UTFPR", "Praça Central", "Supermercado Bom Dia", "BR 487", "COAMO Pq. Industrial"),
+                lista(campos, "pontos_referencia", "nome"));
+        assertEquals(List.of("6", "5", "8", "4", "8"), lista(campos, "pontos_referencia", "tempo"));
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> pontos = (List<Map<String, Object>>) campos.get("pontos_referencia");
+        assertEquals("Educação", valor(sub(pontos.get(0), "categoria")));
+        assertEquals("Lazer", valor(sub(pontos.get(1), "categoria")));
+        assertEquals("Compras", valor(sub(pontos.get(2), "categoria")));
+        assertEquals("Transporte", valor(sub(pontos.get(3), "categoria")));
+        assertNull(pontos.get(4).get("categoria"), "sem categoria reconhecida, fica sem — nunca inventada");
+    }
+
+    @Test
+    void pontoSemParentesesSozinhoNaPaginaNaoEUsado() {
+        Map<String, Object> campos = new LinkedHashMap<>();
+        extractor.extrair("Entrega em apenas 12 min\r\n", doc("book.pdf"), 5, campos, new java.util.ArrayList<>());
+        assertFalse(campos.containsKey("pontos_referencia"));
+    }
+
+    @Test
+    void pontosDeReferenciaPorDistancia() {
+        String texto = "Shopping Catuaí - 1,5 km\r\nEscola Municipal (800 m)\r\n";
+        Map<String, Object> campos = new LinkedHashMap<>();
+        extractor.extrair(texto, doc("book.pdf"), 3, campos, new java.util.ArrayList<>());
+
+        assertEquals(List.of("Shopping Catuaí", "Escola Municipal"), lista(campos, "pontos_referencia", "nome"));
+        assertEquals(List.of("1,5", "800"), lista(campos, "pontos_referencia", "distancia"));
+        assertEquals(List.of("km", "m"), lista(campos, "pontos_referencia", "unidade"));
+    }
+
+    @Test
+    void pontoRepetidoEmOutraPaginaNaoDuplica() {
+        Map<String, Object> campos = new LinkedHashMap<>();
+        extractor.extrair("Shopping Norte (15 min)\r\n", doc("book.pdf"), 3, campos, new java.util.ArrayList<>());
+        extractor.extrair("Shopping Norte (15 min)\r\n", doc("book.pdf"), 9, campos, new java.util.ArrayList<>());
+        assertEquals(List.of("Shopping Norte"), lista(campos, "pontos_referencia", "nome"));
+    }
 }

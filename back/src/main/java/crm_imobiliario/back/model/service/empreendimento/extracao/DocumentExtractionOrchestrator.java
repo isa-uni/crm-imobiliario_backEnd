@@ -185,6 +185,37 @@ public class DocumentExtractionOrchestrator implements EmpreendimentoExtractionS
             boolean elegivelParaEndereco = !isBook || paginaAtual < totalPaginas;
             memorialTextExtractor.extrair(textoDaPagina, doc, paginaAtual, elegivelParaEndereco, camposGerais, alertas);
         }
+        if (isBook) extrairSecoesDoBookPelaPosicao(doc, extraido.textoPorPagina, paginasComTabela, camposGerais);
+    }
+
+    // "Final 01" / "FINAL 03" — rótulos dos apartamentos no mapa geral dos blocos (implantação)
+    private static final Pattern FINAL_APARTAMENTO = Pattern.compile("(?i)\\bfinal\\s*0\\d");
+    private static final int MAX_PAGINAS_AREAS_COMUNS = 4;
+
+    /**
+     * Books que não usam os rótulos "ÁREAS COMUNS"/"DIFERENCIAIS" seguem a mesma ordem de páginas:
+     * áreas comuns logo no começo (normalmente a primeira página depois da capa), localização com o mapa
+     * na 2ª/3ª página (já coberta página a página) e os diferenciais na página seguinte ao mapa geral dos
+     * blocos. Só preenche o que a leitura por rótulo não encontrou.
+     */
+    private void extrairSecoesDoBookPelaPosicao(EmpreendimentoDocumento doc, List<String> paginas,
+                                                 Set<Integer> paginasComTabela, Map<String, Object> camposGerais) {
+        for (int i = 0; i < Math.min(MAX_PAGINAS_AREAS_COMUNS, paginas.size()) && !camposGerais.containsKey("areas_comuns"); i++) {
+            String texto = paginas.get(i);
+            if (texto != null && !paginasComTabela.contains(i + 1)) memorialTextExtractor.extrairAreasComunsSemRotulo(texto, doc, i + 1, camposGerais);
+        }
+        if (camposGerais.containsKey("diferenciais")) return;
+        for (int i = 0; i < paginas.size(); i++) {
+            String texto = paginas.get(i);
+            if (texto == null || FINAL_APARTAMENTO.matcher(texto).results().count() < 6) continue;
+            // a página de diferenciais é a seguinte ao mapa dos blocos (às vezes a próxima vem só com imagem)
+            for (int j = i + 1; j <= Math.min(i + 2, paginas.size() - 1) && !camposGerais.containsKey("diferenciais"); j++) {
+                if (paginas.get(j) != null && !paginasComTabela.contains(j + 1)) {
+                    memorialTextExtractor.extrairDiferenciaisSemRotulo(paginas.get(j), doc, j + 1, camposGerais);
+                }
+            }
+            return;
+        }
     }
 
     private void processarPlanilha(EmpreendimentoDocumento doc, byte[] bytes, String ext,

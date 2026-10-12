@@ -155,6 +155,45 @@ class DocumentExtractionOrchestratorTest {
         assertEquals("Rua Example", enderecoExtraido(r), "documento que não é Book não deve ter a última página descartada");
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    void bookSemRotulosUsaAPosicaoDasPaginas() throws IOException {
+        // estrutura dos books da Pride: capa, áreas comuns na 1ª página de conteúdo, mapa geral dos blocos
+        // ("Final 01"...) e, na página seguinte, os diferenciais sem rótulo
+        String implantacao = String.join("\n", java.util.Collections.nCopies(3, "Final 01\nFinal 02\nFinal 03\nFinal 04"));
+        Path pdf = escreverPdfMultiPagina("C-PRD - Book - Exemplo (Digital).pdf",
+                "Viva belas historias.",
+                "Guarita\nBicicletario\nPlayground\nPet Place\nQuadra de Areia",
+                implantacao,
+                "4 apartamentos\npor andar.\n1 vaga de garagem\npor apartamento.\nPiso ceramico\nnas areas molhadas.",
+                "construtorapride.com.br\nCentral de Vendas:");
+
+        var r = orchestrator.extract(List.of(documento(1, "C-PRD - Book - Exemplo (Digital).pdf", pdf)));
+        var resultado = (java.util.Map<String, Object>) r.resultadoJson;
+
+        var areas = (List<java.util.Map<String, Object>>) resultado.get("areas_comuns");
+        assertNotNull(areas);
+        assertEquals(5, areas.size());
+        assertEquals(2, ((java.util.Map<String, Object>) areas.get(0).get("nome")).get("pagina"));
+        var difs = (List<java.util.Map<String, Object>>) resultado.get("diferenciais");
+        assertNotNull(difs);
+        assertEquals("4 apartamentos por andar", ((java.util.Map<String, Object>) difs.get(0).get("titulo")).get("valor"));
+        assertEquals(3, difs.size());
+        assertEquals(4, ((java.util.Map<String, Object>) difs.get(0).get("titulo")).get("pagina"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void documentoQueNaoEBookNaoUsaARegraDePosicao() throws IOException {
+        String implantacao = String.join("\n", java.util.Collections.nCopies(3, "Final 01\nFinal 02\nFinal 03\nFinal 04"));
+        Path pdf = escreverPdfMultiPagina("memorial.pdf",
+                "Guarita\nBicicletario\nPlayground\nPet Place", implantacao, "4 apartamentos\npor andar.\n1 vaga de garagem\npor apartamento.");
+
+        var resultado = (java.util.Map<String, Object>) orchestrator.extract(List.of(documento(1, "memorial.pdf", pdf))).resultadoJson;
+        assertNull(resultado.get("areas_comuns"));
+        assertNull(resultado.get("diferenciais"));
+    }
+
     private void escreverLinha(PDPageContentStream cs, float y, String... colunas) throws IOException {
         float x = 50;
         for (String coluna : colunas) {
