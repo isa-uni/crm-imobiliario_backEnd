@@ -177,6 +177,11 @@ class DashboardTimelineTest {
                 .andExpect(jsonPath("$.emAndamento").value(1))            // o reaberto
                 .andExpect(jsonPath("$.emAndamentoMesAnterior").value(0)) // no fim do mês passado os dois estavam em contrato
                 .andExpect(jsonPath("$.contratos").value(1))
+                .andExpect(jsonPath("$.descartes").value(1))
+                // funil: o reaberto (até Aprovado, mesmo tendo tido contrato) e o contrato do mês; sem o
+                // descarte e sem o contrato do mês passado
+                .andExpect(jsonPath("$.funil[*].etapa", contains("lead", "oportunidade", "visita-agendada", "visita-realizada", "pasta", "aprovado", "contrato")))
+                .andExpect(jsonPath("$.funil[*].quantidade", contains(2, 2, 2, 2, 2, 2, 1)))
                 .andExpect(jsonPath("$.valorContratos").value(100_000.0))
                 .andExpect(jsonPath("$.conversao").value(closeTo(33.33, 0.01)))
                 .andExpect(jsonPath("$.contratosMesAnterior").value(2));

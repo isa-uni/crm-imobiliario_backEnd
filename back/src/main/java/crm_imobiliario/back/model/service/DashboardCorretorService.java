@@ -68,16 +68,25 @@ public class DashboardCorretorService {
         Map<Long, List<Tramitacao>> trams = tramitacoes(base);
 
         YearMonth mes = YearMonth.from(agora);
-        long clientes = 0, contratos = 0, contratosAnterior = 0, andamento = 0, andamentoAnterior = 0;
+        long clientes = 0, contratos = 0, descartes = 0, contratosAnterior = 0, andamento = 0, andamentoAnterior = 0;
         double valor = 0;
         YearMonth anterior = mes.minusMonths(1);
         LocalDateTime refAnterior = ContagemFunil.referencia(anterior, agora);
+        // funil do Dashboard: em andamento + contratos do mês; quem está em andamento nunca conta em
+        // "contrato", mesmo que já tenha tido um contrato desfeito
+        int idxContrato = ContagemFunil.ETAPAS.indexOf("contrato");
+        long[] funil = new long[ContagemFunil.ETAPAS.size()];
         for (Lead l : base) {
             List<Tramitacao> t = trams.getOrDefault(l.getId(), List.of());
             ContagemFunil.Situacao s = ContagemFunil.avaliar(l, t, mes, agora, true);
             if (s.entra()) {
                 clientes++;
                 if (s.tipo() == ContagemFunil.Tipo.ANDAMENTO) andamento++;
+                if (s.tipo() == ContagemFunil.Tipo.DESCARTE) descartes++;
+                if (s.tipo() != ContagemFunil.Tipo.DESCARTE) {
+                    int ate = s.tipo() == ContagemFunil.Tipo.CONTRATO ? idxContrato : Math.min(s.maxIdx(), idxContrato - 1);
+                    for (int k = 0; k <= ate; k++) funil[k]++;
+                }
                 if (s.tipo() == ContagemFunil.Tipo.CONTRATO) {
                     contratos++;
                     valor += l.getValorInteresse() != null ? l.getValorInteresse() : 0;
@@ -88,7 +97,10 @@ public class DashboardCorretorService {
             if (sa.entra() && sa.tipo() == ContagemFunil.Tipo.ANDAMENTO) andamentoAnterior++;
         }
         double conversao = clientes > 0 ? (double) contratos / clientes * 100 : 0;
-        return new DashboardCorretorResumoDTO(mes.toString(), clientes, andamento, andamentoAnterior, contratos, valor, conversao, contratosAnterior, escopo);
+        return new DashboardCorretorResumoDTO(mes.toString(), clientes, andamento, andamentoAnterior, contratos, descartes, valor, conversao, contratosAnterior,
+                java.util.stream.IntStream.range(0, funil.length)
+                        .mapToObj(i -> new DashboardCorretorResumoDTO.EtapaFunil(ContagemFunil.ETAPAS.get(i), funil[i])).toList(),
+                escopo);
     }
 
     @Transactional(readOnly = true)
