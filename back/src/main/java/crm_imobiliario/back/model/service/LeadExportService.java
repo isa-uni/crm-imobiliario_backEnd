@@ -31,8 +31,8 @@ public class LeadExportService {
     static final List<String> FUNIL_ORDEM = List.of(
             "lead", "oportunidade", "visita-agendada", "visita-realizada", "pasta", "aprovado", "contrato");
 
-    public byte[] exportarExcel(String search, String status, String month, String origem, String historico) {
-        List<LeadListaDTO> leads = leadsService.findAllForExport(search, status, month, origem, historico)
+    public byte[] exportarExcel(String search, String status, String month, String origem, String historico, String escopo) {
+        List<LeadListaDTO> leads = leadsService.findAllForExport(search, status, month, origem, historico, escopo)
                 .stream().map(LeadListaDTO::from).toList();
 
         try (XSSFWorkbook wb = new XSSFWorkbook()) {

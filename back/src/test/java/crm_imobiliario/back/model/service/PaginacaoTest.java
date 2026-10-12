@@ -342,7 +342,10 @@ class PaginacaoTest {
         corretor.setEquipe(eq);
         usuarioRepository.save(corretor);
         lead(gestor, "Cliente do Gestor", "lead");
-        lead(corretor, "Cliente do Corretor", "contrato");
+        Lead doCorretor = lead(corretor, "Cliente do Corretor", "contrato");
+        java.time.YearMonth atual = java.time.YearMonth.now();
+        java.time.YearMonth anterior = atual.minusMonths(1);
+        jdbc.update("UPDATE lead SET data_criacao = ? WHERE id = ?", Timestamp.valueOf(anterior.atDay(10).atTime(9, 0)), doCorretor.getId());
         String auth = bearer(gestor);
 
         // padrão da API (e "equipe"): a equipe inteira, inclusive os clientes do próprio gestor
@@ -370,8 +373,29 @@ class PaginacaoTest {
                 .andExpect(jsonPath("$.total").value(2))
                 .andExpect(jsonPath("$.contratos").value(1));
 
+        // Exportar Clientes: os meses do filtro de período e a planilha seguem o mesmo escopo
+        mockMvc.perform(get("/leads/meses").param("escopo", "meus").header("Authorization", auth))
+                .andExpect(jsonPath("$", contains(atual.toString())));
+        mockMvc.perform(get("/leads/meses").param("escopo", "equipe").header("Authorization", auth))
+                .andExpect(jsonPath("$", contains(atual.toString(), anterior.toString())));
+        org.junit.jupiter.api.Assertions.assertEquals(1, linhasExportadas(auth, "meus", null));
+        org.junit.jupiter.api.Assertions.assertEquals(2, linhasExportadas(auth, "equipe", null));
+        // "meus" + mês anterior: o cliente daquele mês é do corretor, então não sobra nenhum
+        org.junit.jupiter.api.Assertions.assertEquals(0, linhasExportadas(auth, "meus", anterior.toString()));
+        org.junit.jupiter.api.Assertions.assertEquals(1, linhasExportadas(auth, "equipe", anterior.toString()));
+
         // para o corretor o parâmetro não muda nada
         mockMvc.perform(get("/leads").param("page", "0").param("size", "10").param("escopo", "equipe").header("Authorization", bearer(corretor)))
                 .andExpect(jsonPath("$.content[*].nome", contains("Cliente do Corretor")));
+    }
+
+    /** Quantidade de clientes na aba de dados da planilha exportada (sem o cabeçalho). */
+    private int linhasExportadas(String auth, String escopo, String month) throws Exception {
+        var req = get("/leads/exportar").param("escopo", escopo).header("Authorization", auth);
+        if (month != null) req = req.param("month", month);
+        byte[] bytes = mockMvc.perform(req).andExpect(status().isOk()).andReturn().getResponse().getContentAsByteArray();
+        try (var wb = new org.apache.poi.xssf.usermodel.XSSFWorkbook(new java.io.ByteArrayInputStream(bytes))) {
+            return wb.getSheetAt(0).getLastRowNum();
+        }
     }
 }

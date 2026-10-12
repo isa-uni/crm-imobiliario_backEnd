@@ -60,11 +60,11 @@ class LeadExportServiceIntegrationTest {
     @Test
     void geraWorkbookComQuatroAbasEDadosCorretos() throws Exception {
         setUp();
-        when(leadsService.findAllForExport(any(), any(), any(), any(), any())).thenReturn(List.of(
+        when(leadsService.findAllForExport(any(), any(), any(), any(), any(), any())).thenReturn(List.of(
                 leadEntity(1L, "lead", "digital_lead", "novo"),
                 leadEntity(2L, "pasta", "espontaneo", "reaquecido")));
 
-        byte[] bytes = exportService.exportarExcel(null, null, null, null, null);
+        byte[] bytes = exportService.exportarExcel(null, null, null, null, null, null);
         assertNotNull(bytes);
         assertTrue(bytes.length > 0);
 
@@ -95,9 +95,9 @@ class LeadExportServiceIntegrationTest {
     @Test
     void listaVaziaAindaGeraWorkbookValidoComQuatroAbas() throws Exception {
         setUp();
-        when(leadsService.findAllForExport(any(), any(), any(), any(), any())).thenReturn(List.of());
+        when(leadsService.findAllForExport(any(), any(), any(), any(), any(), any())).thenReturn(List.of());
 
-        byte[] bytes = exportService.exportarExcel("nada", "all", "all", "all", "all");
+        byte[] bytes = exportService.exportarExcel("nada", "all", "all", "all", "all", null);
 
         try (Workbook wb = WorkbookFactory.create(new ByteArrayInputStream(bytes))) {
             assertEquals(4, wb.getNumberOfSheets());

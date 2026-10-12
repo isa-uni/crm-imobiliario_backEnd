@@ -130,8 +130,8 @@ public class LeadController {
 
     /** Meses (AAAA-MM) com cliente cadastrado no escopo do usuário — opções do filtro de período. */
     @GetMapping("/meses")
-    public ResponseEntity<List<String>> meses() {
-        return ResponseEntity.ok(leadService.mesesComCadastro());
+    public ResponseEntity<List<String>> meses(@RequestParam(required = false) String escopo) {
+        return ResponseEntity.ok(leadService.mesesComCadastro(escopo));
     }
 
     @GetMapping("/metrics")
@@ -150,8 +150,10 @@ public class LeadController {
             @RequestParam(required = false) String month,
             @RequestParam(required = false) String origem,
             @RequestParam(required = false) String historico,
+            // gestor: "meus" (só os clientes dele) ou "equipe" (padrão)
+            @RequestParam(required = false) String escopo,
             org.springframework.security.core.Authentication authentication) {
-        byte[] arquivo = leadExportService.exportarExcel(search, status, month, origem, historico);
+        byte[] arquivo = leadExportService.exportarExcel(search, status, month, origem, historico, escopo);
         String filename = "leads_" + java.time.LocalDate.now() + ".xlsx";
         return ResponseEntity.ok()
                 .contentType(org.springframework.http.MediaType.parseMediaType(

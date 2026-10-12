@@ -347,10 +347,10 @@ public class LeadsService {
     }
 
     /** Meses (AAAA-MM, do mais recente ao mais antigo) com cliente cadastrado no escopo do usuário — opções do filtro de período. */
-    public List<String> mesesComCadastro() {
+    public List<String> mesesComCadastro(String escopo) {
         Usuario solicitante = usuarioLogado();
         if (solicitante == null) throw new AccessDeniedException("Sua sessão expirou. Faça login novamente.");
-        return leadRepository.findAll(specEscopo(solicitante)).stream()
+        return leadRepository.findAll(Specification.where(specEscopo(solicitante)).and(specSomenteMeus(solicitante, escopo))).stream()
                 .map(Lead::getDataCriacao)
                 .filter(java.util.Objects::nonNull)
                 .map(d -> java.time.YearMonth.from(d).toString())
@@ -444,10 +444,12 @@ public class LeadsService {
     }
 
     /** Todos os leads que batem com o filtro (sem paginação) — usado pela exportação, que precisa do conjunto completo, não só de uma página. */
-    public List<Lead> findAllForExport(String search, String status, String month, String origem, String historico) {
+    /** @param escopo gestor: "meus" restringe aos clientes dele; qualquer outro valor = equipe (padrão) */
+    public List<Lead> findAllForExport(String search, String status, String month, String origem, String historico, String escopo) {
         Usuario solicitante = usuarioLogado();
         if (solicitante == null) throw new AccessDeniedException("Sua sessão expirou. Faça login novamente.");
         Specification<Lead> spec = Specification.where(specEscopo(solicitante))
+                .and(specSomenteMeus(solicitante, escopo))
                 .and(specSearch(search))
                 .and(specStatus(status))
                 .and(specMonth(month))
