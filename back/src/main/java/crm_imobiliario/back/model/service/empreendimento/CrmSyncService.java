@@ -80,7 +80,7 @@ public class CrmSyncService {
         int sucesso = 0, falha = 0;
         try {
             List<GuiaParserService.EmpreendimentoGuia> guias = carregarGuias();
-            List<Empreendimento> seeds = montarSeeds(guias);
+            List<Empreendimento> seeds = filtrarPermitidos(montarSeeds(guias));
             for (Empreendimento emp : seeds) {
                 try {
                     empreendimentoService.salvarOuAtualizar(emp);
@@ -151,6 +151,15 @@ public class CrmSyncService {
         }
         log.warn("CrmSyncService: nenhum Guia encontrado em candidatosJson={}, candidatosHtml={}", candidatosJson, candidatosHtml);
         return List.of();
+    }
+
+    /** Mantém só os slugs de crm.empreendimentos-permitidos (lista vazia = sem filtro). */
+    private List<Empreendimento> filtrarPermitidos(List<Empreendimento> seeds) {
+        List<String> permitidos = crmProperties.getEmpreendimentosPermitidos();
+        if (permitidos == null || permitidos.isEmpty()) {
+            return seeds;
+        }
+        return seeds.stream().filter(e -> permitidos.contains(e.getSlug())).toList();
     }
 
     private List<Empreendimento> montarSeeds(List<GuiaParserService.EmpreendimentoGuia> guias) {

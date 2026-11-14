@@ -31,11 +31,11 @@ import lombok.extern.slf4j.Slf4j;
 @RequiredArgsConstructor
 public class DocumentExtractionOrchestrator implements EmpreendimentoExtractionService {
 
-    private final PdfTableExtractor pdfTableExtractor;
-    private final SpreadsheetTableExtractor spreadsheetTableExtractor;
-    private final WordTextExtractor wordTextExtractor;
-    private final UnidadeTableMapper unidadeTableMapper;
-    private final MemorialTextExtractor memorialTextExtractor;
+    private final PdfTableExtractor pdfTableExtractor; //Extrair tabelas e textos de PDFs.
+    private final SpreadsheetTableExtractor spreadsheetTableExtractor; //Ler tabelas de planilhas.
+    private final WordTextExtractor wordTextExtractor; //Ler textos e tabelas de documentos Word.
+    private final UnidadeTableMapper unidadeTableMapper; //Transformar tabelas brutas em unidades estruturadas.
+    private final MemorialTextExtractor memorialTextExtractor; //Procurar informações gerais no texto.
 
     @Value("${crm.extracao.max-pdf-pages:40}")
     private int maxPdfPages;
@@ -60,20 +60,21 @@ public class DocumentExtractionOrchestrator implements EmpreendimentoExtractionS
 
     @Override
     public ExtractionResult extract(List<EmpreendimentoDocumento> documentos) {
-        List<EmpreendimentoFonteData> fontes = new ArrayList<>();
-        List<String> alertas = new ArrayList<>();
-        List<UnidadeExtraida> todasUnidades = new ArrayList<>();
-        Map<String, Object> camposGerais = new LinkedHashMap<>();
+        List<EmpreendimentoFonteData> fontes = new ArrayList<>();//origem das informações encontradas.
+        List<String> alertas = new ArrayList<>();//mensagens de atenção.
+        List<UnidadeExtraida> todasUnidades = new ArrayList<>();//unidades encontradas nos documentos.
+        Map<String, Object> camposGerais = new LinkedHashMap<>();//dados gerais do empreendimento.
+        //quatro estruturas vazias para guardar os resultados.
 
-        for (EmpreendimentoDocumento doc : documentos) {
-            String ext = doc.getTipo() != null ? doc.getTipo().toLowerCase(Locale.ROOT) : "";
+        for (EmpreendimentoDocumento doc : documentos) {//Percorrendo os documentos
+            String ext = doc.getTipo() != null ? doc.getTipo().toLowerCase(Locale.ROOT) : "";//Identificando a extensão
             try {
-                byte[] bytes = Files.readAllBytes(Paths.get(doc.getCaminho()));
-                if (EXT_PDF.contains(ext)) {
+                byte[] bytes = Files.readAllBytes(Paths.get(doc.getCaminho()));//pega o caminho registrado no banco e lê o arquivo que está armazenado no servidor.
+                if (EXT_PDF.contains(ext)) {//se for pdf
                     processarPdf(doc, bytes, todasUnidades, camposGerais, alertas);
-                } else if (EXT_PLANILHA.contains(ext)) {
+                } else if (EXT_PLANILHA.contains(ext)) {//planilha
                     processarPlanilha(doc, bytes, ext, todasUnidades, alertas);
-                } else if (EXT_WORD.contains(ext)) {
+                } else if (EXT_WORD.contains(ext)) {//word
                     processarWord(doc, bytes, ext, todasUnidades, camposGerais, alertas);
                 } else {
                     alertas.add("Formato \"" + ext + "\" (" + doc.getNomeOriginal() + ") não é suportado para extração automática — envie os dados manualmente.");
@@ -82,32 +83,56 @@ public class DocumentExtractionOrchestrator implements EmpreendimentoExtractionS
             } catch (Exception e) {
                 log.warn("Falha ao processar documento {} ({}): {}", doc.getId(), doc.getNomeOriginal(), e.getMessage(), e);
                 alertas.add("Não foi possível ler o arquivo \"" + doc.getNomeOriginal() + "\": " + e.getMessage());
-                marcarRevisao(doc);
+                //O sistema registra um alerta
+                marcarRevisao(doc);//O documento é marcado para revisão.
             }
         }
 
-        Map<String, List<UnidadeExtraida>> porUnidade = new LinkedHashMap<>();
+        Map<String, List<UnidadeExtraida>> porUnidade = new LinkedHashMap<>();//agrupar as ocorrencias por unidade
         for (UnidadeExtraida u : todasUnidades) {
-            porUnidade.computeIfAbsent(u.chaveIdentidade(), k -> new ArrayList<>()).add(u);
+            porUnidade.computeIfAbsent(u.chaveIdentidade(), k -> new ArrayList<>()).add(u);//identificação da unidade.
+            //Se essa chave ainda não existir, crie uma lista vazia para ela e adiciona no map
+            //EX: porUnidade
+            //        │
+            //        ├── apartamento-101
+            //        │   ├── Ocorrência do Memorial.pdf
+            //        │   └── Ocorrência da planilha
+            //        │
+            //        └── apartamento-102
+            //            └── Ocorrência da planilha
         }
+        //Ele está agrupando as ocorrências para conseguir reunir informações de diferentes documentos.
 
+        //Criando o JSON das unidades
         List<Map<String, Object>> unidadesJson = new ArrayList<>();
-        for (Map.Entry<String, List<UnidadeExtraida>> entry : porUnidade.entrySet()) {
+        for (Map.Entry<String, List<UnidadeExtraida>> entry : porUnidade.entrySet()) {//percorre cada grupo de unidades.
             Map<String, Object> unidadeJson = new LinkedHashMap<>();
             unidadeJson.put("chave", entry.getKey());
-            // rastreabilidade da linha (§12 do spec): de qual documento/linha de tabela esta
-            // unidade veio, usada pela tela de revisão para preencher Unidade.documentoOrigemId
-            UnidadeExtraida primeiraOcorrencia = entry.getValue().get(0);
+            //Cria um mapa vazio e adiciona a chave de identificação. Ex:  "chave": "apartamento-101"
+           
+            UnidadeExtraida primeiraOcorrencia = entry.getValue().get(0);//Pega a primeira ocorrência da lista.
             unidadeJson.put("documentoOrigemId", primeiraOcorrencia.documentoId);
+            //Qual documento originou a primeira ocorrência.
             unidadeJson.put("linhaOrigem", primeiraOcorrencia.linhaOrigem);
-            for (CampoUnidade campo : CampoUnidade.values()) {
-                // usa o primeiro valor não nulo encontrado; se documentos divergirem, todos viram fontes
-                // (mesmo mecanismo de conflito já existente para campos do empreendimento)
-                CampoEvidencia primeira = null;
-                for (UnidadeExtraida u : entry.getValue()) {
-                    CampoEvidencia ev = u.campos.get(campo);
-                    if (ev == null || ev.valor == null) continue;
-                    if (primeira == null) primeira = ev;
+            //Qual linha da tabela originou essa unidade.
+
+            //EX:{
+            //    "chave": "apartamento-101",
+            //    "documentoOrigemId": 50,
+            //    "linhaOrigem": 15
+            //   }
+
+            for (CampoUnidade campo : CampoUnidade.values()) {//Percorrendo os campos de cada unidade
+               //percorre todos os valores definidos no enum CampoUnidade.
+
+                CampoEvidencia primeira = null;//variável que começará vazia.
+                for (UnidadeExtraida u : entry.getValue()) {//todas as ocorrências daquela unidade.(documentos encontradas)
+                    CampoEvidencia ev = u.campos.get(campo);//ão entendi
+                    //consulta o mapa campos da ocorrência atual e procura o campo que está sendo analisado.
+                    if (ev == null || ev.valor == null) continue;//Ignorando valores vazios
+                    if (primeira == null) primeira = ev;//verifica se ainda não encontrou nenhum valor para aquele campo.
+                    //está escolhendo o primeiro valor não nulo encontrado, conforme a ordem das ocorrências.
+
                     EmpreendimentoFonteData f = new EmpreendimentoFonteData();
                     f.campo = "unidades[" + entry.getKey() + "]." + campo.name();
                     f.valorExtraido = ev.valor;
@@ -117,16 +142,20 @@ public class DocumentExtractionOrchestrator implements EmpreendimentoExtractionS
                     f.documentoNome = ev.documentoNome;
                     f.documentoId = u.documentoId;
                     fontes.add(f);
+
+                    //registra as fontes de todas as ocorrências que possuem valor.
                 }
                 if (primeira != null) unidadeJson.put(campo.name(), campoJson(primeira));
+                //Se encontrou algum valor, adiciona esse campo ao JSON.
             }
             for (UnidadeExtraida u : entry.getValue()) alertas.addAll(u.alertas);
+            //percorre as ocorrências daquela unidade e adiciona todos os alertas encontrados.
             unidadesJson.add(unidadeJson);
         }
-        camposGerais.put("unidades", unidadesJson);
+        camposGerais.put("unidades", unidadesJson);//adiciona nele uma chave chamada unidades.
 
         for (Map.Entry<String, Object> topo : camposGerais.entrySet()) {
-            if ("unidades".equals(topo.getKey())) continue;
+            if ("unidades".equals(topo.getKey())) continue;//ignora para não duplicar
             coletarFontes(topo.getValue(), topo.getKey(), fontes);
         }
 
@@ -137,80 +166,97 @@ public class DocumentExtractionOrchestrator implements EmpreendimentoExtractionS
             f.confianca = 100;
             f.documentoNome = "sistema";
             fontes.add(f);
-        }
+        }//Cada alerta é transformado em uma fonte especial.
 
         ExtractionResult r = new ExtractionResult();
-        r.resultadoJson = camposGerais;
-        r.fontes = fontes;
+        r.resultadoJson = camposGerais;//Todos os campos gerais e unidades extraídas
+        r.fontes = fontes;//Origem das informações encontradas e alertas
         r.modelo = "regras-deterministicas";
-        r.avisosTruncamento = alertas;
+        r.avisosTruncamento = alertas;//Lista de alertas
         return r;
     }
 
-    private void processarPdf(EmpreendimentoDocumento doc, byte[] bytes, List<UnidadeExtraida> todasUnidades,
-                               Map<String, Object> camposGerais, List<String> alertas) throws IOException {
+    //Coordena a extração de um PDF: identifica tabelas, mapeia unidades, extrai textos e registra alertas
+    private void processarPdf(EmpreendimentoDocumento doc, //Dados do documento, como nome, ID e caminho do arquivo.
+                                byte[] bytes, //Conteúdo do PDF em formato de bytes.
+                                List<UnidadeExtraida> todasUnidades,//Lista onde serão armazenados os apartamentos encontrados.
+                                Map<String, Object> camposGerais, //Mapa onde serão armazenados dados gerais do empreendimento.
+                                List<String> alertas //	Lista de problemas ou avisos encontrados durante a extração.
+                            ) throws IOException {
         PdfTableExtractor.Resultado extraido = pdfTableExtractor.extrair(bytes, maxPdfPages);
+        //responsável por tentar identificar e extrair as tabelas existentes no PDF.
+
         alertas.addAll(prefixarAlertas(extraido.alertas, doc.getNomeOriginal()));
+        //recebe os alertas e o nome do arquivo e adiciona todos esses alertas à lista geral.
 
         for (TabelaBruta tabela : extraido.tabelas) {
             UnidadeTableMapper.Resultado mapeado = unidadeTableMapper.mapear(tabela, doc.getId(), doc.getNomeOriginal());
             todasUnidades.addAll(mapeado.unidades);
-            alertas.addAll(prefixarAlertas(mapeado.alertas, doc.getNomeOriginal()));
+            alertas.addAll(prefixarAlertas(mapeado.alertas, doc.getNomeOriginal()));//Adiciona os problemas encontrados durante o mapeamento.
         }
-        // texto livre é processado página a página (não como um único bloco) para preservar de qual
-        // página cada campo veio (§5/§15 do spec) — livros comerciais reais espalham cada informação
-        // (endereço, diferenciais, lazer) numa página diferente. Roda em toda página que NÃO tenha uma
-        // tabela estruturada — antes só rodava quando o documento inteiro não tinha nenhuma tabela em
-        // lugar nenhum, o que apagaria silenciosamente todo o endereço/nome/diferenciais de um Book real
-        // que por acaso tivesse uma tabela de unidades embutida em alguma página.
+        //O mapper tenta transformar essa tabela bruta em informações reconhecidas pelo sistema e adiciona todas as unidades identificadas à lista geral.
+
+
+        // Extrair textos que não estão em tabelas
+        //descobrir quais páginas do PDF possuem tabelas.
         java.util.Set<Integer> paginasComTabela = extraido.tabelas.stream()
-                .map(t -> t.pagina)
-                .filter(java.util.Objects::nonNull)
-                .collect(java.util.stream.Collectors.toSet());
-        int totalPaginas = extraido.textoPorPagina.size();
-        boolean isBook = isBook(doc);
+                .map(t -> t.pagina)//Pega somente o número da página de cada tabela.
+                .filter(java.util.Objects::nonNull)//Remove valores nulos.
+                .collect(java.util.stream.Collectors.toSet());//removendo duplicidades.
+
+        //o sistema não quer processar essas páginas novamente como se fossem textos livres.
+
+        int totalPaginas = extraido.textoPorPagina.size();//total de paginas
+        boolean isBook = isBook(doc);//descobrir se aquele documento é um Book.
         if (isBook) {
+            //Quando o documento for um Book, a última página não poderá ser utilizada como fonte do endereço do empreendimento.
             log.info("Documento \"{}\" classificado como Book. Total de páginas: {}. Página {} ignorada para "
                             + "extração do endereço institucional do empreendimento. Páginas elegíveis para endereço: 1 a {}.",
                     doc.getNomeOriginal(), totalPaginas, totalPaginas, Math.max(0, totalPaginas - 1));
         }
-        for (int i = 0; i < totalPaginas; i++) {
-            int paginaAtual = i + 1;
-            if (paginasComTabela.contains(paginaAtual)) continue;
-            String textoDaPagina = extraido.textoPorPagina.get(i);
-            if (textoDaPagina == null || textoDaPagina.isBlank()) continue;
-            // regra do spec de correção de endereço (§1/§3): para Books, a última página nunca é
-            // fonte do endereço do empreendimento — só traz o endereço institucional/comercial da
-            // Pride. Se o Book tiver uma única página, ela também é a última e fica igualmente fora.
-            boolean elegivelParaEndereco = !isBook || paginaAtual < totalPaginas;
+        for (int i = 0; i < totalPaginas; i++) {//Percorrer as páginas e extrair os textos
+            int paginaAtual = i + 1;//transforma o índice da lista no número real da página.
+            if (paginasComTabela.contains(paginaAtual)) continue;//Essa página está dentro da lista de páginas que possuem tabela?Se sim, pula para a proxima
+
+            String textoDaPagina = extraido.textoPorPagina.get(i);//Recuperar o texto da página
+            if (textoDaPagina == null || textoDaPagina.isBlank()) continue;//Verificar se existe texto
+            // A página pode fornecer o endereço se o documento não for um Book OU se for uma página anterior à última.
+            boolean elegivelParaEndereco = !isBook || paginaAtual < totalPaginas;//Definir se a página pode fornecer o endereço
             memorialTextExtractor.extrair(textoDaPagina, doc, paginaAtual, elegivelParaEndereco, camposGerais, alertas);
+            //trabalha com textos livres.
         }
         if (isBook) extrairSecoesDoBookPelaPosicao(doc, extraido.textoPorPagina, paginasComTabela, camposGerais);
-    }
+        //tenta encontrar informações do Book considerando a posição em que elas aparecem, mesmo quando não estão identificadas por títulos específicos.
+    }   
 
     // "Final 01" / "FINAL 03" — rótulos dos apartamentos no mapa geral dos blocos (implantação)
     private static final Pattern FINAL_APARTAMENTO = Pattern.compile("(?i)\\bfinal\\s*0\\d");
+    
     private static final int MAX_PAGINAS_AREAS_COMUNS = 4;
+    //procura áreas comuns somente nas quatro primeiras páginas do documento.
 
     /**
-     * Books que não usam os rótulos "ÁREAS COMUNS"/"DIFERENCIAIS" seguem a mesma ordem de páginas:
-     * áreas comuns logo no começo (normalmente a primeira página depois da capa), localização com o mapa
-     * na 2ª/3ª página (já coberta página a página) e os diferenciais na página seguinte ao mapa geral dos
-     * blocos. Só preenche o que a leitura por rótulo não encontrou.
+      Procura informações de áreas comuns e diferenciais do empreendimento com base na posição das páginas do Book.
      */
     private void extrairSecoesDoBookPelaPosicao(EmpreendimentoDocumento doc, List<String> paginas,
                                                  Set<Integer> paginasComTabela, Map<String, Object> camposGerais) {
         for (int i = 0; i < Math.min(MAX_PAGINAS_AREAS_COMUNS, paginas.size()) && !camposGerais.containsKey("areas_comuns"); i++) {
-            String texto = paginas.get(i);
+            //Continue procurando enquanto ainda não existir o campo areas_comuns no mapa.
+            String texto = paginas.get(i);//Recupera o texto da página.
             if (texto != null && !paginasComTabela.contains(i + 1)) memorialTextExtractor.extrairAreasComunsSemRotulo(texto, doc, i + 1, camposGerais);
+            //método tenta extrair as áreas comuns mesmo sem encontrar um título ou rótulo específico.
         }
-        if (camposGerais.containsKey("diferenciais")) return;
-        for (int i = 0; i < paginas.size(); i++) {
+        if (camposGerais.containsKey("diferenciais")) return;//Se o campo diferenciais já foi encontrado, o método termina.
+        for (int i = 0; i < paginas.size(); i++) {//começa a procurar a página do mapa geral dos blocos.
             String texto = paginas.get(i);
+            //percorre as páginas procurando aquela que contenha pelo menos seis ocorrências de rótulos como:'FINAL 01', 'FINAL 02', 'FINAL 03'
             if (texto == null || FINAL_APARTAMENTO.matcher(texto).results().count() < 6) continue;
             // a página de diferenciais é a seguinte ao mapa dos blocos (às vezes a próxima vem só com imagem)
+
             for (int j = i + 1; j <= Math.min(i + 2, paginas.size() - 1) && !camposGerais.containsKey("diferenciais"); j++) {
+                //Depois de encontrar uma possível página com o mapa dos blocos, o sistema procura os diferenciais nas páginas seguintes
                 if (paginas.get(j) != null && !paginasComTabela.contains(j + 1)) {
+                    //Se a página seguinte possui texto e não tem tabela, o sistema tenta extrair os diferenciais dela.
                     memorialTextExtractor.extrairDiferenciaisSemRotulo(paginas.get(j), doc, j + 1, camposGerais);
                 }
             }
@@ -245,44 +291,62 @@ public class DocumentExtractionOrchestrator implements EmpreendimentoExtractionS
         }
     }
 
-    private List<String> prefixarAlertas(List<String> alertas, String nomeDocumento) {
+    //	Acrescenta o nome do documento no início de cada alerta.
+    private List<String> prefixarAlertas(List<String> alertas, //Uma lista de mensagens de alerta.
+                                        String nomeDocumento //Nome do arquivo que gerou esses alertas.
+                                        ) {
         return alertas.stream().map(a -> "[" + nomeDocumento + "] " + a).toList();
+        //acrescenta o nome do arquivo no início de cada mensagem e reúne os resultados em uma nova lista.
     }
 
+    //Altera o status de processamento do documento para revisao.
     private void marcarRevisao(EmpreendimentoDocumento doc) {
+        //Ele altera o status de processamento do documento para revisão
         doc.setStatusProcessamento("revisao");
     }
 
+    //Percorre o resultado da extração e coleta as evidências dos dados encontrados, como valor, confiança, página e documento.
     @SuppressWarnings("unchecked")
     private void coletarFontes(Object node, String prefixo, List<EmpreendimentoFonteData> out) {
-        if (node instanceof Map) {
+        if (node instanceof Map) {//Verificar se é um Map
             Map<String, Object> mapa = (Map<String, Object>) node;
-            if (mapa.containsKey("valor") && mapa.containsKey("confianca")) {
-                Object valor = mapa.get("valor");
-                if (valor == null || String.valueOf(valor).isBlank()) return;
-                EmpreendimentoFonteData f = new EmpreendimentoFonteData();
-                f.campo = prefixo;
+            if (mapa.containsKey("valor") && mapa.containsKey("confianca")) {//verifica se o mapa contém essas duas chaves
+                Object valor = mapa.get("valor");//pega o conteúdo da chave valor.
+                if (valor == null || String.valueOf(valor).isBlank()) return;//verifica se está vazio ou nulo.
+                EmpreendimentoFonteData f = new EmpreendimentoFonteData();//Cria um objeto que representa a origem de uma informação.
+                f.campo = prefixo;//Depois, preenche seus atributos
+                //Identifica qual campo está sendo registrado.
                 f.valorExtraido = String.valueOf(valor);
+                //Guarda o valor encontrado.
                 Object conf = mapa.get("confianca");
                 f.confianca = conf instanceof Number n ? n.intValue() : null;
+                //Se conf for um número, ele será convertido para inteiro.
                 Object pag = mapa.get("pagina");
                 f.pagina = pag instanceof Number n ? n.intValue() : null;
+
                 Object trecho = mapa.get("trecho_original");
                 f.trecho = trecho != null ? String.valueOf(trecho) : null;
-                Object docNome = mapa.get("documento_nome");
+
+                Object docNome = mapa.get("documento_nome");//Recupera o nome do documento.
                 f.documentoNome = docNome != null ? String.valueOf(docNome) : null;
-                out.add(f);
+
+                out.add(f);//Adiciona a fonte à lista e encerra a execução para aquele nó.
                 return;
             }
             for (Map.Entry<String, Object> e : mapa.entrySet()) {
-                coletarFontes(e.getValue(), prefixo + "." + e.getKey(), out);
+                //Se o mapa não tiver a estrutura de um campo, o método percorre seus elementos.
+                coletarFontes(e.getValue(), prefixo + "." + e.getKey(), out);//recursividade
+                //Ainda não encontrei um campo extraído aqui. Vou entrar nos objetos que estão dentro deste objeto e procurar novamente.
             }
         } else if (node instanceof List<?> lista) {
+            //Se o objeto for uma lista, o método percorre cada elemento e também chama a si mesmo.
             for (int i = 0; i < lista.size(); i++) coletarFontes(lista.get(i), prefixo + "[" + i + "]", out);
         }
     }
 
+    //	Transforma um objeto CampoEvidencia em um Map, facilitando sua conversão para JSON.
     private Map<String, Object> campoJson(CampoEvidencia ev) {
+        //recebe um objeto CampoEvidencia e transforma seus atributos em um Map.
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("valor", ev.valor);
         m.put("confianca", ev.confianca);

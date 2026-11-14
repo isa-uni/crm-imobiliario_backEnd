@@ -40,6 +40,8 @@ public class UsuarioService {
     private crm_imobiliario.back.model.service.EquipeService equipeService;
     @Autowired(required = false)
     private crm_imobiliario.back.model.repository.EquipeRepository equipeRepository;
+    @Autowired(required = false)
+    private crm_imobiliario.back.model.repository.LeadRepository leadRepository;
 
     /** Usuário recém-criado + a senha temporária em texto puro, que só existe neste momento. */
     public record UsuarioCriado(Usuario usuario, String senhaTemporaria) {}
@@ -251,7 +253,27 @@ public class UsuarioService {
             // mantém equipe existente; se quiser desvincular, admin faz via equipe
         }
 
-        return usuarioRepository.save(usuario);
+        Usuario salvo = usuarioRepository.save(usuario);
+        sincronizarEquipeDosLeads(salvo);
+        return salvo;
+    }
+
+    /** Leads ATRIBUIDO do corretor acompanham a equipe dele (mesma regra do EquipeService.sincronizarLiderados). */
+    private void sincronizarEquipeDosLeads(Usuario usuario) {
+        //não existe um repositório de leads disponível.
+        if (leadRepository == null || usuario.getEquipe() == null) return;
+        Long equipeId = usuario.getEquipe().getId();//id da equipe
+
+        //busca todos os leads vinculados ao corretor.
+        for (crm_imobiliario.back.model.entity.Lead l : leadRepository.findByCorretorId(usuario.getId())) {
+
+            //verifica quais leads precisam ser atualizados
+            //O lead precisa estar com o status de atribuição ATRIBUIDO e não possui equipe OU possui uma equipe diferente da equipe atual do corretor.
+            if ("ATRIBUIDO".equals(l.getStatusAtribuicao()) && (l.getEquipe() == null || !l.getEquipe().getId().equals(equipeId))) {
+                l.setEquipe(usuario.getEquipe());//equipe nova
+                leadRepository.save(l);
+            }
+        }
     }
 
     public Usuario atualizarPerfil(String email, PerfilDTO dto) {
@@ -320,7 +342,8 @@ public class UsuarioService {
         Usuario usuario = usuarioRepository.findById(id)
                 .orElseThrow(() -> new RecursoNaoEncontradoException("O usuário solicitado não foi encontrado. Ele pode ter sido removido."));
         String papel = usuario.getPapel() != null ? usuario.getPapel().getPapel() : "";
-        Usuario gestor = LeadAtribuicaoService.gestorAtivo(usuario);
+        Usuario gestor = LeadAtribuicaoService.gestorAtivo(usuario);//pega o gestor
+        //se ele for corretor faz a contagem dos leads
         long leads = "corretor".equals(papel) && leadAtribuicaoService != null ? leadAtribuicaoService.contarLeadsAtribuidos(id) : 0;
         return new PreviaInativacao(usuario.getId(), usuario.getNome(), papel,
                 gestor != null ? gestor.getId() : null, gestor != null ? gestor.getNome() : null,
@@ -343,22 +366,31 @@ public class UsuarioService {
         Usuario usuario = usuarioRepository.findById(id)
                 .orElseThrow(() -> new RecursoNaoEncontradoException("O usuário solicitado não foi encontrado. Ele pode ter sido removido."));
         String papelAlvo = usuario.getPapel() != null ? usuario.getPapel().getPapel() : "";
+        //se usuario inativado for corretor e está sem gestor vinculado
         if ("corretor".equals(papelAlvo) && LeadAtribuicaoService.gestorAtivo(usuario) == null) {
-            if (vincularGestorId != null) {
-                aplicarGestor(usuario, buscarGestorValido(vincularGestorId, usuario));
+            if (vincularGestorId != null) {//verifica se veio o param do novo gestor responsavel
+                aplicarGestor(usuario, buscarGestorValido(vincularGestorId, usuario));//vincula o gestor e equipe
+
+            //Não tem gestor, possui leads e não vai prosseguir sem gestor(prosseguirSemGestor false)
             } else if (!prosseguirSemGestor && leadAtribuicaoService != null && leadAtribuicaoService.contarLeadsAtribuidos(id) > 0) {
                 throw new RegraNegocioException(usuario.getNome() + " não tem gestor vinculado. Vincule um gestor para cuidar da redistribuição dos leads "
                         + "ou confirme que você mesmo ficará responsável por ela.", "gestorId", "CORRETOR_SEM_GESTOR");
             }
         }
         usuario.setAtivo(false);
-        usuario.setTokenVersion((usuario.getTokenVersion() != null ? usuario.getTokenVersion() : 0) + 1);
+
+        //verifica se tem versão do token: se tiver, pega o token senão 0. De qualquer forma incrementa 1
+        usuario.setTokenVersion((usuario.getTokenVersion() != null ? usuario.getTokenVersion() : 0) + 1);//invalida o token
         Usuario salvo = usuarioRepository.save(usuario);
 
         String papel = salvo.getPapel() != null ? salvo.getPapel().getPapel() : "";
+        //se for corretor
         if ("corretor".equals(papel)) {
             try {
+                //Busca quem solicitou a inativação
                 Usuario solicitante = solicitanteEmail != null ? usuarioRepository.findByEmail(solicitanteEmail).orElse(null) : null;
+                
+                //Verifica se o serviço de atribuição de leads existe.
                 if (leadAtribuicaoService != null) {
                     // responsável pela redistribuição: gestor do corretor ou, sem gestor, quem fez a inativação
                     leadAtribuicaoService.desligamentoCorretor(id, solicitante);
@@ -401,10 +433,14 @@ public class UsuarioService {
     /** Mesma regra do cadastro/edição: o corretor passa para a equipe do gestor (ou mantém a atual). */
     private void aplicarGestor(Usuario usuario, Usuario gestor) {
         usuario.setGestor(gestor);
-        crm_imobiliario.back.model.entity.Equipe eg = gestor.getEquipe();
+        crm_imobiliario.back.model.entity.Equipe eg = gestor.getEquipe();//equipe do gestor
+
+        //tenta pegar a equipe diretamente do cadastro do gestor.
+        //Se o gestor não tiver uma equipe carregada (null), tenta buscar no banco de dados pelo ID do gestor.
         if (eg == null && equipeRepository != null) eg = equipeRepository.findByGestorId(gestor.getId()).orElse(null);
         if (eg != null) usuario.setEquipe(eg);
         usuarioRepository.save(usuario);
+        sincronizarEquipeDosLeads(usuario);
     }
 
     public Usuario ativarUsuario(Long id) {

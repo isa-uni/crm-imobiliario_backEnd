@@ -13,6 +13,7 @@ public final class EquipeResolver {
 
     private EquipeResolver() {}
 
+    //encontrar a equipe diretamente no cadastro do usuário. Se não encontrar, procura através do gestor associado a ele.
     public static Equipe resolver(Usuario u, EquipeRepository equipeRepository) {
         if (u == null) return null;
         if (u.getEquipe() != null) return u.getEquipe();

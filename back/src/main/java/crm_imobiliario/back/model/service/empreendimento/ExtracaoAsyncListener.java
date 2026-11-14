@@ -20,6 +20,7 @@ public class ExtracaoAsyncListener {
 
     @Async
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    //listener deve executar depois que a transação que publicou o evento tiver sido confirmada.
     public void onExtracaoSolicitada(EmpreendimentoExtracaoService.ExtracaoSolicitadaEvent event) {
         extracaoService.processar(event.extracaoId());
     }

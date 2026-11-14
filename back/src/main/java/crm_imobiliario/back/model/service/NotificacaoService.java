@@ -65,7 +65,7 @@ public class NotificacaoService {
                 ? "Entre em contato com o lead e atualize o status dele na tela Leads."
                 : "Entre em contato com os leads e atualize o status deles na tela Leads.";
         salvar(corretor, TIPO_LEADS_RECEBIDOS, titulo, mensagem + " " + acao, "/leads", n == 1 ? leads.get(0) : null);
-        email(corretor, titulo, mensagem, acao, "/leads");
+        // email(corretor, titulo, mensagem, acao, "/leads");
     }
 
     /**
@@ -73,8 +73,8 @@ public class NotificacaoService {
      * se ele não tiver gestor, o administrador que fez a inativação.
      */
     public void notificarRedistribuicaoPendente(Usuario responsavel, Usuario corretorInativado, List<Lead> leads, boolean responsavelEhGestor) {
-        if (responsavel == null || leads == null || leads.isEmpty()) return;
-        int n = leads.size();
+        if (responsavel == null || leads == null || leads.isEmpty()) return;//Não existe responsável. A lista de leads é nula. A lista de leads está vazia.
+        int n = leads.size();//tamanho dos leads na lista
         String titulo = n == 1 ? "1 lead aguardando redistribuição" : n + " leads aguardando redistribuição";
         String motivo = responsavelEhGestor
                 ? "Você recebeu este aviso porque é o gestor de " + corretorInativado.getNome() + "."
@@ -85,8 +85,8 @@ public class NotificacaoService {
         String acao = n == 1
                 ? "Acesse a tela Redistribuição e atribua o lead a um corretor ativo."
                 : "Acesse a tela Redistribuição e atribua esses leads a corretores ativos (é possível atribuir vários de uma vez).";
-        salvar(responsavel, TIPO_REDISTRIBUICAO_PENDENTE, titulo, mensagem + " " + acao, "/redistribuicao", null);
-        email(responsavel, titulo, mensagem, acao, "/redistribuicao");
+        salvar(responsavel, TIPO_REDISTRIBUICAO_PENDENTE, titulo, mensagem + " " + acao, "/redistribuicao", null);//salva uma notificação no banco.
+        // email(responsavel, titulo, mensagem, acao, "/redistribuicao");
     }
 
     private void salvar(Usuario destino, String tipo, String titulo, String mensagem, String link, Lead lead) {
@@ -96,7 +96,7 @@ public class NotificacaoService {
                 .titulo(titulo)
                 .mensagem(mensagem)
                 .link(link)
-                .leadId(lead != null ? lead.getId() : null)
+                .leadId(lead != null ? lead.getId() : null)//A notificação não fica vinculada a um lead específico, porque ela representa um conjunto de leads que aguardam redistribuição.
                 .leadNome(lead != null ? lead.getNome() : null)
                 .lida(false)
                 .dataCriacao(LocalDateTime.now())
@@ -119,6 +119,7 @@ public class NotificacaoService {
 
     public long contarNaoLidas(Long usuarioId) {
         return notificacaoRepository.countByUsuarioIdAndLidaFalse(usuarioId);
+        //busca no banco notificações do usuario que ainda não foram lidas
     }
 
     public void marcarComoLida(Long notificacaoId, Long usuarioId) {

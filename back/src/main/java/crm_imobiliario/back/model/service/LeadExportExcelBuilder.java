@@ -68,30 +68,31 @@ final class LeadExportExcelBuilder {
     private LeadExportExcelBuilder() {}
 
     static void buildLeadsSheet(XSSFWorkbook wb, java.util.List<LeadListaDTO> leads) {
-        XSSFSheet sheet = wb.createSheet("Leads");
+        XSSFSheet sheet = wb.createSheet("Leads");//cria uma aba leads
         CellStyle header = headerStyle(wb);
-        String[] colunas = {
+        String[] colunas = {//titulo das colunas
                 "Nome", "Telefone", "Email", "Status", "Histórico", "Origem",
                 "Valor de Interesse", "Empreendimento", "Data de Criação", "Data de Atualização"
         };
-        Row cabecalho = sheet.createRow(0);
-        for (int c = 0; c < colunas.length; c++) {
-            Cell cell = cabecalho.createCell(c);
-            cell.setCellValue(colunas[c]);
-            cell.setCellStyle(header);
+        Row cabecalho = sheet.createRow(0);//primeira linha da planilha
+        for (int c = 0; c < colunas.length; c++) {//percorre todos os titulos
+            Cell cell = cabecalho.createCell(c);//cria uma celula na posição atual
+            cell.setCellValue(colunas[c]);//coloca o nome da coluna na celula
+            cell.setCellStyle(header);//aplica formatacao do cabecalho
             sheet.setColumnWidth(c, 22 * 256);
         }
 
-        int r = 1;
-        for (LeadListaDTO lead : leads) {
-            Row row = sheet.createRow(r++);
+        int r = 1;//controle para linha atual, começa em 1 pois 0 é o cabecalho
+        for (LeadListaDTO lead : leads) {//percorre cada cliente
+            Row row = sheet.createRow(r++);//nova linha para o cliente
+            //Cada linha pega uma informação do cliente e coloca em uma coluna.
             row.createCell(0).setCellValue(nvl(lead.nome()));
             row.createCell(1).setCellValue(nvl(lead.telefone()));
             row.createCell(2).setCellValue(nvl(lead.email()));
             row.createCell(3).setCellValue(nvl(lead.status()));
-            row.createCell(4).setCellValue(historicoLabel(lead.historico()));
-            row.createCell(5).setCellValue(origemLabel(lead.origem()));
-            row.createCell(6).setCellValue(lead.valorInteresse() != null ? lead.valorInteresse() : 0);
+            row.createCell(4).setCellValue(historicoLabel(lead.historico()));//pega o histórico e transforma o código técnico em um texto amigável.
+            row.createCell(5).setCellValue(origemLabel(lead.origem()));//mesma coisa com a origem
+            row.createCell(6).setCellValue(lead.valorInteresse() != null ? lead.valorInteresse() : 0);//Se o cliente possuir um valor de interesse, utiliza esse valor.
             row.createCell(7).setCellValue(nvl(lead.empreendimentoNome()));
             row.createCell(8).setCellValue(lead.dataCriacao() != null ? lead.dataCriacao().format(DATA_HORA) : "");
             row.createCell(9).setCellValue(lead.dataAtualizacao() != null ? lead.dataAtualizacao().format(DATA_HORA) : "");
@@ -99,9 +100,11 @@ final class LeadExportExcelBuilder {
     }
 
     static void buildFunilSheet(XSSFWorkbook wb, Map<String, Long> contagens, java.util.List<String> ordem) {
-        XSSFSheet sheet = wb.createSheet("Funil de Vendas");
+        //wb = arquivo excel, contagens é a quantidade de clientes em cada etapa, e ordem do funil
+        XSSFSheet sheet = wb.createSheet("Funil de Vendas");//cria a aba
         int ultimaLinha = escreverTabelaContagem(sheet, headerStyle(wb), "Etapa", ordem, contagens, LeadExportExcelBuilder::funilLabel);
-        writeBarChart(sheet, "Funil de Vendas", 1, ultimaLinha);
+        //escreve a tabela com as etapas e suas quantidades e depois troca por um nome amigavel
+        writeBarChart(sheet, "Funil de Vendas", 1, ultimaLinha);//cria o grafico de barras utilizando a tabela
     }
 
     // usado só quando não há nenhum lead no filtro — garante ao menos uma linha de dados,
@@ -110,72 +113,84 @@ final class LeadExportExcelBuilder {
 
     static void buildOrigemSheet(XSSFWorkbook wb, Map<String, Long> contagens) {
         XSSFSheet sheet = wb.createSheet("Origem dos Leads");
-        java.util.List<String> chaves = chavesOuPlaceholder(contagens);
+        java.util.List<String> chaves = chavesOuPlaceholder(contagens);//verifica se existem informações para preencher a tabela.
         int ultimaLinha = escreverTabelaContagem(sheet, headerStyle(wb), "Origem", chaves, contagens, LeadExportExcelBuilder::origemLabel);
-        writePieChart(sheet, "Origem dos Leads", 1, ultimaLinha);
+        //Cria a tabela com as origens e suas quantidades.
+        writePieChart(sheet, "Origem dos Leads", 1, ultimaLinha);//Cria um gráfico de pizza.
     }
 
     static void buildHistoricoSheet(XSSFWorkbook wb, Map<String, Long> contagens) {
         XSSFSheet sheet = wb.createSheet("Histórico dos Leads");
-        java.util.List<String> chaves = chavesOuPlaceholder(contagens);
+        java.util.List<String> chaves = chavesOuPlaceholder(contagens);//verifica se existe os dados
         int ultimaLinha = escreverTabelaContagem(sheet, headerStyle(wb), "Histórico", chaves, contagens, LeadExportExcelBuilder::historicoLabel);
-        // só 3 categorias — barra é mais legível que uma pizza de 3 fatias, e reaproveita o
-        // mesmo helper do gráfico do funil.
-        writeBarChart(sheet, "Histórico dos Leads", 1, ultimaLinha);
+        // Cria uma tabela com os históricos e suas quantidades.
+        writeBarChart(sheet, "Histórico dos Leads", 1, ultimaLinha);//Cria um gráfico de barras.
     }
 
     private static java.util.List<String> chavesOuPlaceholder(Map<String, Long> contagens) {
         return contagens.isEmpty() ? java.util.List.of(SEM_DADOS) : java.util.List.copyOf(contagens.keySet());
+        //Se o mapa estiver vazio, cria uma lista contendo Nenhum lead encontrado. Se houver dados, pega as chaves do mapa e transforma em uma lista.
     }
 
     /** Escreve cabeçalho + uma linha por chave (na ordem dada), retorna o índice (0-based) da última linha de dados. */
     private static int escreverTabelaContagem(XSSFSheet sheet, CellStyle headerStyle, String colunaLabel,
             java.util.List<String> ordemChaves, Map<String, Long> contagens, java.util.function.Function<String, String> label) {
-        Row cabecalho = sheet.createRow(0);
-        Cell c0 = cabecalho.createCell(0);
-        c0.setCellValue(colunaLabel);
+        //escrever tabelas de resumo.
+        //sheet	é aba onde a tabela será criada. headerStyle é formatação do cabeçalho. colunaLabel	é o nome da primeira coluna.
+        //ordemChaves é a lista dos itens que serão apresentados. contagens	é a quantidade de cada item. label é a função que transforma o nome técnico em nome amigável.
+
+        Row cabecalho = sheet.createRow(0);//criando a primeira linha
+        Cell c0 = cabecalho.createCell(0);//criando primeira coluna
+        c0.setCellValue(colunaLabel);//coloca o nome recebido em colunaLabel.
         c0.setCellStyle(headerStyle);
         Cell c1 = cabecalho.createCell(1);
         c1.setCellValue("Quantidade");
         c1.setCellStyle(headerStyle);
+        //Cria a segunda coluna com o nome Quantidade.
         sheet.setColumnWidth(0, 26 * 256);
         sheet.setColumnWidth(1, 14 * 256);
+        //Define a largura da primeira e da segunda coluna.
 
         int r = 1;
-        for (String chave : ordemChaves) {
-            Row row = sheet.createRow(r);
-            row.createCell(0).setCellValue(label.apply(chave));
-            row.createCell(1).setCellValue(contagens.getOrDefault(chave, 0L));
-            r++;
+        for (String chave : ordemChaves) {//começa na segunda linha e percorre todas as chaves.
+            Row row = sheet.createRow(r);//cria linha
+            row.createCell(0).setCellValue(label.apply(chave));//Coloca o nome amigável na primeira coluna.
+            row.createCell(1).setCellValue(contagens.getOrDefault(chave, 0L));//Pega a quantidade daquela chave.
+            r++;//proxima
         }
-        return r - 1;
+        return r - 1;//Devolve o índice da última linha de dados.
     }
 
     private static void writeBarChart(XSSFSheet sheet, String titulo, int primeiraLinhaDados, int ultimaLinhaDados) {
-        XSSFDrawing drawing = sheet.createDrawingPatriarch();
-        XSSFClientAnchor anchor = drawing.createAnchor(0, 0, 0, 0, 3, 0, 12, 20);
-        XSSFChart chart = drawing.createChart(anchor);
+        XSSFDrawing drawing = sheet.createDrawingPatriarch();//Essa linha cria uma área de desenho dentro da aba.   
+        XSSFClientAnchor anchor = drawing.createAnchor(0, 0, 0, 0, 3, 0, 12, 20);//Define a posição e o tamanho do gráfico na planilha.
+        XSSFChart chart = drawing.createChart(anchor);//Cria o gráfico naquela posição.
         chart.setTitleText(titulo);
         chart.setTitleOverlay(false);
+        //Define o título e informa que ele não deve ficar sobreposto à área do gráfico.
 
         XDDFChartLegend legend = chart.getOrAddLegend();
         legend.setPosition(LegendPosition.BOTTOM);
+        //Adiciona a legenda e posiciona na parte inferior.
 
-        XDDFCategoryAxis eixoCategorias = chart.createCategoryAxis(AxisPosition.BOTTOM);
-        XDDFValueAxis eixoValores = chart.createValueAxis(AxisPosition.LEFT);
+        XDDFCategoryAxis eixoCategorias = chart.createCategoryAxis(AxisPosition.BOTTOM);//Cria o eixo das categorias.
+        XDDFValueAxis eixoValores = chart.createValueAxis(AxisPosition.LEFT);//Cria o eixo dos valores numéricos.
         eixoValores.setCrosses(AxisCrosses.AUTO_ZERO);
 
         XDDFCategoryDataSource categorias = XDDFDataSourcesFactory.fromStringCellRange(
                 sheet, new CellRangeAddress(primeiraLinhaDados, ultimaLinhaDados, 0, 0));
+        //Pegue os textos da primeira coluna, entre a primeira e a última linha de dados
+
         XDDFNumericalDataSource<Double> valores = XDDFDataSourcesFactory.fromNumericCellRange(
                 sheet, new CellRangeAddress(primeiraLinhaDados, ultimaLinhaDados, 1, 1));
+        //Agora ele pega os números da segunda coluna.
 
-        XDDFChartData data = chart.createData(ChartTypes.BAR, eixoCategorias, eixoValores);
-        XDDFChartData.Series series = data.addSeries(categorias, valores);
-        series.setTitle("Quantidade");
-        ((XDDFBarChartData) data).setBarDirection(BarDirection.COL);
+        XDDFChartData data = chart.createData(ChartTypes.BAR, eixoCategorias, eixoValores);//informa que o tipo de gráfico será de barras.
+        XDDFChartData.Series series = data.addSeries(categorias, valores);//Adiciona os dados ao gráfico.
+        series.setTitle("Quantidade");//Define o nome da série.
+        ((XDDFBarChartData) data).setBarDirection(BarDirection.COL);//Define a orientação das barras como colunas.
 
-        chart.plot(data);
+        chart.plot(data);//Desenha o gráfico utilizando os dados preparados.
     }
 
     private static void writePieChart(XSSFSheet sheet, String titulo, int primeiraLinhaDados, int ultimaLinhaDados) {
@@ -192,22 +207,26 @@ final class LeadExportExcelBuilder {
 
         // gráfico de pizza não usa eixos — createData espera null para categoria/valor
         XDDFChartData data = chart.createData(ChartTypes.PIE, null, null);
-        XDDFChartData.Series series = data.addSeries(categorias, valores);
+        XDDFChartData.Series series = data.addSeries(categorias, valores);//Adiciona os dados.
         series.setTitle("Quantidade");
 
-        chart.plot(data);
+        chart.plot(data);//Desenha o gráfico.
 
         XDDFChartLegend legend = chart.getOrAddLegend();
-        legend.setPosition(LegendPosition.RIGHT);
+        legend.setPosition(LegendPosition.RIGHT);//A legenda fica na direita
     }
 
-    private static CellStyle headerStyle(XSSFWorkbook wb) {
+    private static CellStyle headerStyle(XSSFWorkbook wb) {//cria a aparência dos títulos das tabelas.
         Font negrito = wb.createFont();
         negrito.setBold(true);
+        //Cria uma fonte e coloca em negrito.
+
         CellStyle estilo = wb.createCellStyle();
         estilo.setFont(negrito);
-        estilo.setFillForegroundColor(IndexedColors.GREY_25_PERCENT.getIndex());
-        estilo.setFillPattern(org.apache.poi.ss.usermodel.FillPatternType.SOLID_FOREGROUND);
+        //Cria um estilo de célula e aplica a fonte criada.
+
+        estilo.setFillForegroundColor(IndexedColors.GREY_25_PERCENT.getIndex());//Define a cor de preenchimento como cinza claro.
+        estilo.setFillPattern(org.apache.poi.ss.usermodel.FillPatternType.SOLID_FOREGROUND);//Faz com que essa cor seja aplicada como preenchimento sólido.
         return estilo;
     }
 

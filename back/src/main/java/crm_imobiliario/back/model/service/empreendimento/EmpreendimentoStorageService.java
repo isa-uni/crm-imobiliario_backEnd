@@ -38,27 +38,33 @@ public class EmpreendimentoStorageService {
         try { Files.createDirectories(basePath); } catch (IOException ignored) {}
     }
 
+    //Receber um arquivo enviado pelo usuário, verificar se ele pode ser enviado, 
+    //armazená-lo no servidor e registrar suas informações no banco de dados.
     public EmpreendimentoDocumento armazenar(MultipartFile file, Long empreendimentoId, Long usuarioId) throws IOException {
         if (file.isEmpty()) throw new IllegalArgumentException("O arquivo \"" + file.getOriginalFilename() + "\" está vazio. Verifique o arquivo e envie novamente.");
         if (file.getSize() > 20 * 1024 * 1024) throw new IllegalArgumentException("O arquivo \"" + file.getOriginalFilename() + "\" tem " + String.format("%.1f", file.getSize() / (1024.0 * 1024.0)) + " MB e excede o limite de 20 MB por arquivo.");
         String original = file.getOriginalFilename() != null ? file.getOriginalFilename() : "arquivo";
+        //descobrindo o nome original do arquivo enviado.
         String ext = original.contains(".") ? original.substring(original.lastIndexOf('.')+1).toLowerCase() : "";
+        //Descobrindo a extensão do arquivo
         if (!ALLOWED_EXT.contains(ext)) throw new IllegalArgumentException("O arquivo \"" + original + "\" não pode ser enviado porque o formato " + (ext.isEmpty() ? "(sem extensão)" : "." + ext) + " não é aceito. Envie PDF, Word (DOC/DOCX), planilha (XLS/XLSX/CSV) ou imagem (JPG/PNG).");
-        String mime = file.getContentType();
-        // mime pode ser null para alguns, permitir se extensão ok
-        if (mime != null && !ALLOWED_MIMES.contains(mime.toLowerCase()) && !ext.equals("csv") && !mime.startsWith("image/")) {
-            // não bloqueia rígido, apenas aviso
-        }
-        byte[] bytes = file.getBytes();
-        String hash = sha256(bytes);
-        // quota: se já existe hash concluído, reutiliza? não duplica, retorna existente
-        // mas para rastreabilidade de upload novo, criamos novo registro mesmo com hash igual
+        //Verificando se o formato é permitido
+        String mime = file.getContentType();//O MIME informa que o conteúdo é identificado como PDF.
 
-        String armazenado = UUID.randomUUID() + "." + ext;
-        Path dir = empreendimentoId != null ? basePath.resolve(String.valueOf(empreendimentoId)) : basePath.resolve("tmp");
-        Files.createDirectories(dir);
-        Path destino = dir.resolve(armazenado);
-        Files.copy(file.getInputStream(), destino, StandardCopyOption.REPLACE_EXISTING);
+        // mime pode ser null para alguns, permitir se extensão ok
+        //if (mime != null && !ALLOWED_MIMES.contains(mime.toLowerCase()) && !ext.equals("csv") && !mime.startsWith("image/")) {
+            // não bloqueia rígido, apenas aviso
+        //}
+
+        byte[] bytes = file.getBytes();//Lê o conteúdo inteiro do arquivo e transforma em um conjunto de bytes.
+        String hash = sha256(bytes);//"Impressão digital"
+        //Arquivos exatamente com o mesmo conteúdo, poderão gerar o mesmo hash SHA-256.
+
+        String armazenado = UUID.randomUUID() + "." + ext;//gera um identificador único
+        Path dir = empreendimentoId != null ? basePath.resolve(String.valueOf(empreendimentoId)) : basePath.resolve("tmp");//encontrando o caminho na pasta
+        Files.createDirectories(dir);//Criando a pasta, caso ela não exista
+        Path destino = dir.resolve(armazenado);//Definindo o caminho completo do arquivo(com o nome do hash)
+        Files.copy(file.getInputStream(), destino, StandardCopyOption.REPLACE_EXISTING);//Copiando o arquivo para o armazenamento
 
         EmpreendimentoDocumento doc = EmpreendimentoDocumento.builder()
             .empreendimentoId(empreendimentoId)
@@ -67,9 +73,9 @@ public class EmpreendimentoStorageService {
             .tipo(ext)
             .tamanho(file.getSize())
             .caminho(destino.toString())
-            .hash(hash)
+            .hash(hash)//"Impressão digital do arquivo"
             .mime(mime)
-            .usuarioUpload(usuarioId)
+            .usuarioUpload(usuarioId)//"Id de quem enviou"
             .statusProcessamento("pendente")
             .build();
         return documentoRepository.save(doc);

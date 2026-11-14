@@ -43,6 +43,8 @@ public class EmpreendimentoIaService {
 
     private void registrarMudanca(Long empreendimentoId, String campo, String valorAnterior, String valorNovo, Long usuarioId) {
         boolean mudou = valorAnterior == null ? valorNovo != null : !valorAnterior.equals(valorNovo);
+        //verifica se teve alterações em algum campo
+        //Se teve salva a tabela de historico
         if (!mudou) return;
         historicoRepository.save(EmpreendimentoHistorico.builder()
             .empreendimentoId(empreendimentoId).campo(campo)
@@ -61,11 +63,14 @@ public class EmpreendimentoIaService {
         boolean filtroEmMemoria = (search != null && !search.isBlank())
                 || (bairro != null && !bairro.isBlank())
                 || (status != null && !status.isBlank());
+
+        //Essa linha cria uma variável verdadeira ou falsa. 
+        // Ela pergunta se pelo menos um destes filtros foi preenchido:search;bairro;status.
         if (filtroEmMemoria) {
-            // busca textual/bairro/status não existem na query do repositório: filtra TUDO primeiro e só
-            // depois pagina — antes bairro/status eram aplicados depois da paginação, o que deixava
-            // páginas com menos itens e totalElements incorreto
-            String termo = search != null ? search.toLowerCase() : null;
+            
+            String termo = search != null ? search.toLowerCase() : null;//Se search não for null, transforme o texto em letras minúsculas.
+
+            //empreendimentos ativos com filtros da busca
             List<Empreendimento> filtered = empreendimentoRepository.findByAtivoTrue().stream()
                 .filter(e -> termo == null || termo.isBlank() || e.getNome().toLowerCase().contains(termo) || (e.getBairro()!=null && e.getBairro().toLowerCase().contains(termo)))
                 .filter(e -> cidade==null || cidade.isBlank() || cidade.equalsIgnoreCase(e.getCidade()))
@@ -75,13 +80,15 @@ public class EmpreendimentoIaService {
                 .filter(e -> precoMin==null || (e.getPrecoMin()!=null && e.getPrecoMin() >= precoMin))
                 .filter(e -> precoMax==null || (e.getPrecoMax()!=null && e.getPrecoMax() <= precoMax))
                 .sorted(comparador(pageable.getSort()))
-                .collect(Collectors.toList());
-            int start = (int) Math.min(pageable.getOffset(), filtered.size());
-            int end = Math.min(start + pageable.getPageSize(), filtered.size());
+                .collect(Collectors.toList());//reune o resultado dos filtros
+            int start = (int) Math.min(pageable.getOffset(), filtered.size());//Descobrir onde a página começa
+            int end = Math.min(start + pageable.getPageSize(), filtered.size());//Descobrir onde a página termina
             List<EmpreendimentoCardDTO> content = filtered.subList(start, end).stream().map(this::toCard).toList();
-            return new PageImpl<>(content, pageable, filtered.size());
+            //Pegar somente os itens daquela página
+            return new PageImpl<>(content, pageable, filtered.size());//Montar a página final
         }
         Page<Empreendimento> page = empreendimentoRepository.buscarComFiltros(cidade, null, null, precoMin, precoMax, pageable);
+        //se não tiver filtro consulta ao repositório
         return page.map(this::toCard);
     }
 
@@ -187,6 +194,8 @@ public class EmpreendimentoIaService {
             registrarMudanca(emp.getId(), "bairro", antes.get("bairro"), emp.getBairro(), usuarioId);
             registrarMudanca(emp.getId(), "cep", antes.get("cep"), emp.getCep(), usuarioId);
         }
+
+        //salvado a ta
         if (dto.getCaracteristica()!=null) {
             var c = dto.getCaracteristica();
             EmpreendimentoCaracteristica car = caracteristicaRepository.findByEmpreendimentoId(emp.getId()).orElse(new EmpreendimentoCaracteristica());
@@ -267,8 +276,7 @@ public class EmpreendimentoIaService {
             }
         }
         if (dto.getUnidades() != null) {
-            // unidades existentes indexadas por nome uma única vez (antes: uma consulta de TODAS as
-            // unidades para cada unidade enviada — O(n²) em consultas e comparações)
+            // unidades existentes indexadas por nome uma única vez
             Map<String, Unidade> existentes = new HashMap<>();
             for (Unidade ex : unidadeRepository.findByEmpreendimentoId(emp.getId())) {
                 if (ex.getNomeUnidade() != null) existentes.putIfAbsent(ex.getNomeUnidade().toLowerCase(), ex);

@@ -35,16 +35,19 @@ public class EmpreendimentoExtracaoService {
     public EmpreendimentoExtracao criarExtracao(List<Long> documentoIds, Long usuarioId, Long empreendimentoId) {
         if (documentoIds == null || documentoIds.isEmpty()) throw new IllegalArgumentException("Selecione pelo menos um documento para iniciar a extração.");
         if (documentoIds.size() > 5) throw new IllegalArgumentException("Envie no máximo 5 documentos por extração. Foram informados " + documentoIds.size() + ".");
-        List<EmpreendimentoDocumento> docs = documentoRepository.findAllById(documentoIds);
-        if (docs.size() != documentoIds.size()) {
+        List<EmpreendimentoDocumento> docs = documentoRepository.findAllById(documentoIds);//procurando docs no banco
+        if (docs.size() != documentoIds.size()) {//Conferindo se todos os documentos foram encontrados
             Set<Long> encontrados = docs.stream().map(EmpreendimentoDocumento::getId).collect(Collectors.toSet());
+            //Conferindo se todos os documentos foram encontrados
             List<Long> faltando = documentoIds.stream().filter(id -> !encontrados.contains(id)).toList();
+            //compara os IDs enviados pelo usuário com os IDs encontrados no banco. Para descobrindo quais IDs estão faltando
             throw new RecursoNaoEncontradoException("Não foi possível iniciar a extração porque "
                 + (faltando.size() == 1 ? "o documento " + faltando.get(0) + " não foi encontrado." : "os documentos " + faltando + " não foram encontrados.")
                 + " Envie os arquivos novamente.");
+            //Informando qual documento não foi encontrado
         }
 
-        EmpreendimentoExtracao extracao = EmpreendimentoExtracao.builder()
+        EmpreendimentoExtracao extracao = EmpreendimentoExtracao.builder()//Criando o registro da extração no banco
             .empreendimentoId(empreendimentoId)
             .status("pendente")
             .modeloIa("regras-deterministicas")
@@ -53,14 +56,17 @@ public class EmpreendimentoExtracaoService {
             .build();
         extracao = extracaoRepository.save(extracao);
         // vincula documentos via entity
-        for (Long docId : documentoIds) {
+        for (Long docId : documentoIds) {//Para cada ID de documento dentro da lista
             EmpreendimentoExtracaoDocumento link = EmpreendimentoExtracaoDocumento.builder()
                 .extracaoId(extracao.getId()).documentoId(docId).build();
             extracaoDocumentoRepository.save(link);
-            // atualiza status doc
+            //Salva essa relação do docs com a extracao
+            // Encontra o docs e atualiza status para processando
             documentoRepository.findById(docId).ifPresent(d -> { d.setStatusProcessamento("processando"); documentoRepository.save(d); });
         }
-        // processamento em segundo plano, depois do commit (ver ExtracaoAsyncListener)
+        // processamento em segundo plano(ver ExtracaoAsyncListener)
+        //responsável por publicar eventos
+        //Ele está enviando uma informação que permite que outro componente encontre a extração e seus documentos.
         eventPublisher.publishEvent(new ExtracaoSolicitadaEvent(extracao.getId()));
         return extracao;
     }
@@ -76,66 +82,75 @@ public class EmpreendimentoExtracaoService {
      */
     @Transactional
     public void processar(Long extracaoId) {
-        EmpreendimentoExtracao extracao = extracaoRepository.findById(extracaoId).orElse(null);
-        if (extracao == null) return;
+        EmpreendimentoExtracao extracao = extracaoRepository.findById(extracaoId).orElse(null);//encontrando a extracao no banco
+        if (extracao == null) return;//encerra o metodo
         try {
-            extracao.setStatus("processando");
-            extracao.setDataProcessamento(Instant.now());
+            extracao.setStatus("processando");//Atualizando o status para processando
+            extracao.setDataProcessamento(Instant.now());//hora atual
             extracaoRepository.save(extracao);
 
+            //Buscando os documentos da extração(na tabela de vinculo)
             List<Long> docIds = extracaoDocumentoRepository.findByExtracaoId(extracaoId).stream()
                 .map(EmpreendimentoExtracaoDocumento::getDocumentoId).toList();
-            List<EmpreendimentoDocumento> docs = documentoRepository.findAllById(docIds);
+            List<EmpreendimentoDocumento> docs = documentoRepository.findAllById(docIds);//busca as infos completas dos docs
 
-            EmpreendimentoExtractionService.ExtractionResult result = extractionOrchestrator.extract(docs);
+            EmpreendimentoExtractionService.ExtractionResult result = extractionOrchestrator.extract(docs);//resultado da extracao
 
-            String json = objectMapper.writeValueAsString(result.resultadoJson);
+            String json = objectMapper.writeValueAsString(result.resultadoJson);//converte em json
             extracao.setResultado(json);
             extracao.setModeloIa(result.modelo);
             extracao.setDataConclusao(Instant.now());
 
             // salva fontes
-            fonteRepository.deleteAll(fonteRepository.findByExtracaoId(extracaoId));
-            if (result.fontes != null) {
-                for (var f : result.fontes) {
+            fonteRepository.deleteAll(fonteRepository.findByExtracaoId(extracaoId));//busca as fontes que já estavam registradas para aquela extração e exclui esses registros.
+            if (result.fontes != null) {//verifica se a lista de fontes não é nula.
+                for (var f : result.fontes) {//percorre cada fonte individualmente.
                     EmpreendimentoFonte fonte = EmpreendimentoFonte.builder()
                         .extracaoId(extracaoId)
                         .documentoId(f.documentoId)
                         .empreendimentoId(extracao.getEmpreendimentoId())
-                        .campo(f.campo)
+                        .campo(f.campo)//Qual informação foi identificada
                         .valorExtraido(f.valorExtraido)
                         .pagina(f.pagina)
                         .trecho(f.trecho)
                         .confianca(f.confianca)
                         .documentoNome(f.documentoNome)
                         .build();
-                    fonteRepository.save(fonte);
+                    fonteRepository.save(fonte);//salva no banco
                 }
             }
 
             // detecta conflitos, baixa confiança e alertas (documento não suportado, coluna não reconhecida etc.)
             boolean temConflito = detectarConflitos(result.fontes);
             boolean baixaConfianca = result.fontes != null && result.fontes.stream().anyMatch(f -> f.confianca != null && f.confianca < 60);
+            //se pelo menos uma fonte possui confiança inferior a 60.
+
             boolean temAlerta = result.fontes != null && result.fontes.stream().anyMatch(f -> "_alerta".equals(f.campo));
-            extracao.setStatus(temConflito || baixaConfianca || temAlerta ? "revisao" : "concluido");
+            //procura alguma fonte cujo campo seja _alerta.
+
+            extracao.setStatus(temConflito || baixaConfianca || temAlerta ? "revisao" : "concluido");//"Existe conflito OU baixa confiança OU alerta = 'revisao'
             // atualiza doc status — mantém "revisao" nos documentos que o extrator sinalizou (ex.: formato não suportado)
             for (EmpreendimentoDocumento d : docs) {
+                //percorre todos os documentos utilizados na extração e se o status não for revisão, altera para concluido.
                 if (!"revisao".equals(d.getStatusProcessamento())) d.setStatusProcessamento("concluido");
                 documentoRepository.save(d);
             }
 
             extracaoRepository.save(extracao);
             log.info("Extracao {} concluida status={}", extracaoId, extracao.getStatus());
+            //salva e registra log
         } catch (Exception e) {
             log.error("Extracao {} falhou: {}", extracaoId, e.getMessage(), e);
             try {
                 extracao.setStatus("erro");
-                extracao.setErro(e.getMessage());
+                extracao.setErro(e.getMessage());//registra a mensagem de erro
                 extracao.setDataConclusao(Instant.now());
                 extracaoRepository.save(extracao);
                 List<Long> docIds = extracaoDocumentoRepository.findByExtracaoId(extracaoId).stream()
                     .map(EmpreendimentoExtracaoDocumento::getDocumentoId).toList();
+                //Busca os IDs dos documentos relacionados à extração.
                 for (Long docId : docIds) documentoRepository.findById(docId).ifPresent(d -> { d.setStatusProcessamento("erro"); documentoRepository.save(d); });
+                //e atualiza o status para erro.
             } catch (Exception ex) { log.error("Falha ao marcar erro extracao", ex); }
         }
     }
@@ -153,26 +168,41 @@ public class EmpreendimentoExtracaoService {
     @Transactional(readOnly = true)
     public EmpreendimentoExtracaoDTO obter(Long id) {
         EmpreendimentoExtracao e = extracaoRepository.findById(id).orElseThrow(() -> new RecursoNaoEncontradoException("A extração solicitada não foi encontrada. Envie os documentos novamente."));
+        //Buscando a extração no banco
+
         List<Long> docIds = extracaoDocumentoRepository.findByExtracaoId(id).stream()
             .map(EmpreendimentoExtracaoDocumento::getDocumentoId).toList();
+        //Buscando os documentos relacionados
+
         List<EmpreendimentoFonte> fontes = fonteRepository.findByExtracaoId(id);
+        //Buscando as fontes encontradas
+
         // conflitos
         Map<String, List<EmpreendimentoFonte>> porCampo = fontes.stream().collect(Collectors.groupingBy(EmpreendimentoFonte::getCampo));
+        //o código agrupa as fontes pelo campo para identificar conflitos entre os documentos
+
         List<EmpreendimentoExtracaoDTO.ConflitoDTO> conflitos = new ArrayList<>();
-        for (Map.Entry<String, List<EmpreendimentoFonte>> entry : porCampo.entrySet()) {
+        //cria a lista de conflitos
+
+        for (Map.Entry<String, List<EmpreendimentoFonte>> entry : porCampo.entrySet()) {//Percorrendo os campos agrupados
             Set<String> vals = entry.getValue().stream().map(f -> f.getValorExtraido()!=null?f.getValorExtraido().toLowerCase():"").collect(Collectors.toSet());
-            if (vals.size() > 1) {
+            //Identificando os valores diferentes
+
+            if (vals.size() > 1) {//existem valores diferentes, então há conflito.
                 conflitos.add(EmpreendimentoExtracaoDTO.ConflitoDTO.builder()
-                    .campo(entry.getKey())
+                    .campo(entry.getKey()) //Montando o objeto de conflito
                     .valores(entry.getValue().stream().map(f -> EmpreendimentoExtracaoDTO.FonteDTO.builder()
                         .id(f.getId()).documentoId(f.getDocumentoId()).documentoNome(f.getDocumentoNome())
                         .campo(f.getCampo()).valorExtraido(f.getValorExtraido()).pagina(f.getPagina()).trecho(f.getTrecho()).confianca(f.getConfianca()).build()).toList())
                     .build());
+                    //Aqui ele percorre todas as fontes daquele campo e transforma cada uma em um FonteDTO. Pois precisa mostrar de onde vieram as informações divergentes.
             }
         }
         Object resultadoJson = null;
         try { if (e.getResultado()!=null) resultadoJson = objectMapper.readValue(e.getResultado(), Object.class); } catch (Exception ex) { resultadoJson = e.getResultado(); }
+        //Convertendo o resultado JSON
 
+        //Montando o DTO final
         return EmpreendimentoExtracaoDTO.builder()
             .id(e.getId()).empreendimentoId(e.getEmpreendimentoId()).status(e.getStatus()).modeloIa(e.getModeloIa())
             .dataProcessamento(e.getDataProcessamento()).dataConclusao(e.getDataConclusao()).erro(e.getErro())

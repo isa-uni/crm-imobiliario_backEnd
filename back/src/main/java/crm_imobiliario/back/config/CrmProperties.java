@@ -1,5 +1,8 @@
 package crm_imobiliario.back.config;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
@@ -29,4 +32,7 @@ public class CrmProperties {
 
     /** Pasta onde os documentos enviados (upload de empreendimentos) são gravados */
     private String pdfStorage = "./data/empreendimentos";
+
+    /** Slugs dos empreendimentos que o seed do sync pode criar/atualizar. Lista vazia = todos. */
+    private List<String> empreendimentosPermitidos = new ArrayList<>();
 }

@@ -33,5 +33,8 @@ public interface EmpreendimentoRepository extends JpaRepository<Empreendimento, 
     Page<Empreendimento> buscarComFiltros(String cidade, String regiao, Boolean disponiveis,
                                           Long precoMin, Long precoMax, Pageable pageable);
 
+    //Buscar somente empreendimentos ativos, filtrar pela cidade, Filtrar pela região, 
+    //Filtrar pela disponibilidade, Filtrar pelo preço mínimo, preço max
+
     long countByAtivoTrueAndDisponiveisGreaterThan(int disponiveis);
 }

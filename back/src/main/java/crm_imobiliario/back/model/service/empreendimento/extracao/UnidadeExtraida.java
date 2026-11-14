@@ -33,12 +33,13 @@ public class UnidadeExtraida {
         campos.put(campo, ev);
     }
 
+    //	Busca o valor de um campo específico de uma unidade extraída.
     public String valor(CampoUnidade campo) {
         CampoEvidencia ev = campos.get(campo);
         return ev != null ? ev.valor : null;
     }
 
-    /** Chave de identidade da unidade dentro do empreendimento (bloco/torre + unidade). */
+    //Gera uma identificação da unidade usando seu número, removendo espaços e padronizando letras maiúsculas.
     public String chaveIdentidade() {
         String unidade = valor(CampoUnidade.UNIDADE);
         return unidade != null ? unidade.trim().toUpperCase() : null;

@@ -276,73 +276,87 @@ public class LeadsService {
 
     private Specification<Lead> specEscopo(Usuario solicitante) {
         return (root, query, cb) -> {
-            if (solicitante == null) return cb.disjunction();
-            String papel = papelDe(solicitante);
-            if ("admin".equals(papel)) return cb.conjunction();
+            if (solicitante == null) return cb.disjunction();//se não existe usuário, nenhum cliente será retornado.
+            String papel = papelDe(solicitante);//Papel do usuario
+            if ("admin".equals(papel)) return cb.conjunction();//todos os leads
             if ("gestor".equals(papel)) {
-                Equipe eq = resolverEquipeUsuario(solicitante);
-                if (eq == null) return cb.disjunction();
-                Predicate equipeIgual = cb.equal(root.get("equipe").get("id"), eq.getId());
-                // sem join (e sem DISTINCT): o Postgres não aceita DISTINCT com ORDER BY por expressão,
-                // usado na ordenação por etapa do funil e por responsável
+                Equipe eq = resolverEquipeUsuario(solicitante);//descobrindo a equipe do usuario
+                if (eq == null) return cb.disjunction();//se não encontrar, nada retornado
+                Predicate equipeIgual = cb.equal(root.get("equipe").get("id"), eq.getId());//o cliente pertence diretamente à equipe do gestor.
+            
                 var daEquipe = query.subquery(Long.class);
                 var u = daEquipe.from(Usuario.class);
                 daEquipe.select(u.get("id")).where(cb.equal(u.get("equipe").get("id"), eq.getId()));
+                //consulta para descobrir os IDs dos usuários que pertencem à equipe do gestor.
+
                 Predicate corretorEquipeIgual = cb.and(cb.isNull(root.get("equipe")), root.get("corretor").get("id").in(daEquipe));
+                //Primeiro procura clientes que não possuem equipe diretamente associada.
+                //depois que possuem um corretor cujo ID pertence à equipe do gestor.
                 return cb.or(equipeIgual, corretorEquipeIgual);
             }
             if ("corretor".equals(papel)) {
                 return cb.equal(root.get("corretor").get("id"), solicitante.getId());
+                //somente os clientes cujo responsável é ele próprio.
             }
             return cb.disjunction();
         };
     }
 
+    //encontrado se a pesquisa estiver no nome OU no e-mail OU no telefone.
     private Specification<Lead> specSearch(String search) {
         return (root, query, cb) -> {
             if (search == null || search.isBlank()) return cb.conjunction();
             String q = "%" + search.trim().toLowerCase() + "%";
             Predicate nome = cb.like(cb.lower(root.get("nome")), q);
+            //busca se a pesquisa está no nome
             Predicate email = cb.like(cb.lower(root.get("email")), q);
-            // telefone é gravado só com dígitos: "(43) 9840-1" procura por "4398401"
+            //busca se a pesquisa está no email
             String digitos = search.replaceAll("\\D", "");
+            //busca se a pesquisa está no telefone
             if (digitos.isEmpty()) return cb.or(nome, email);
             Predicate telefone = cb.like(root.get("telefone"), "%" + digitos + "%");
-            return cb.or(nome, email, telefone);
+            return cb.or(nome, email, telefone);//Se houver ao menos um, passa pelo filtro
         };
     }
 
     private Specification<Lead> specStatus(String status) {
         return (root, query, cb) -> {
-            if (status == null || status.isBlank() || "all".equalsIgnoreCase(status)) return cb.conjunction();
+            if (status == null || status.isBlank() || "all".equalsIgnoreCase(status)) return cb.conjunction();//não realiza o filtro
             if ("active".equalsIgnoreCase(status)) {
                 return cb.and(cb.notEqual(cb.lower(root.get("status")), "contrato"), cb.notEqual(cb.lower(root.get("status")), "descarte"));
+                //procura clientes cujo status seja diferente de contrato E diferente de descarte.
             }
             if ("archived".equalsIgnoreCase(status)) {
                 return cb.or(cb.equal(cb.lower(root.get("status")), "contrato"), cb.equal(cb.lower(root.get("status")), "descarte"));
+                //somente clientes com status contrato ou descarte
             }
+            //Se não for nenhum desses, procura pelo proprio status informado
             return cb.equal(cb.lower(root.get("status")), status.toLowerCase());
         };
     }
 
     private Specification<Lead> specMonth(String month) {
         return (root, query, cb) -> {
+            //Se selecionar todos os meses, não haverá restrição por período.
             if (month == null || month.isBlank() || "all".equalsIgnoreCase(month)) return cb.conjunction();
-            if ("current".equalsIgnoreCase(month)) {
-                LocalDateTime now = LocalDateTime.now();
-                LocalDateTime start = now.withDayOfMonth(1).withHour(0).withMinute(0).withSecond(0).withNano(0);
-                LocalDateTime end = start.plusMonths(1);
+            if ("current".equalsIgnoreCase(month)) {//quer o mes atual
+                LocalDateTime now = LocalDateTime.now();//dataAtual
+                LocalDateTime start = now.withDayOfMonth(1).withHour(0).withMinute(0).withSecond(0).withNano(0);//horario atual
+                LocalDateTime end = start.plusMonths(1);//Adiciona um mês.
                 return cb.and(cb.greaterThanOrEqualTo(root.get("dataCriacao"), start), cb.lessThan(root.get("dataCriacao"), end));
+                //Retorna se foi cadastrado no primeiro dia do mes atual ou depois e antes do primeiro dia do proximo mes
+
             }
             // mês específico de cadastro: "2026-09"
             java.time.YearMonth ym;
             try {
-                ym = java.time.YearMonth.parse(month.trim());
+                ym = java.time.YearMonth.parse(month.trim());//valida formato ano e mes
             } catch (java.time.format.DateTimeParseException e) {
                 throw new RegraNegocioException("O período \"" + month + "\" não é válido. Use o formato AAAA-MM (ex.: 2026-09).", "month", "INVALID_MONTH");
             }
-            LocalDateTime start = ym.atDay(1).atStartOfDay();
+            LocalDateTime start = ym.atDay(1).atStartOfDay();//Transforma o mês escolhido no primeiro dia, à meia-noite.
             return cb.and(cb.greaterThanOrEqualTo(root.get("dataCriacao"), start), cb.lessThan(root.get("dataCriacao"), start.plusMonths(1)));
+            //Busca os clientes cadastrados durante todo aquele mês.
         };
     }
 
@@ -363,6 +377,7 @@ public class LeadsService {
         return (root, query, cb) -> {
             if (origem == null || origem.isBlank() || "all".equalsIgnoreCase(origem)) return cb.conjunction();
             return cb.equal(root.get("origem"), origem);
+            //se buscar por all não tem restrição
         };
     }
 
@@ -370,17 +385,19 @@ public class LeadsService {
         return (root, query, cb) -> {
             if (historico == null || historico.isBlank() || "all".equalsIgnoreCase(historico)) return cb.conjunction();
             return cb.equal(root.get("historico"), historico);
+            //se não tiver historico especifico, não filtro
         };
     }
 
     /**
-     * Gestor escolhe entre os próprios clientes ("meus") e os da equipe ("equipe" ou nulo, o padrão
-     * da API). Para os demais papéis não muda nada: o escopo já é definido por {@link #specEscopo}.
+     * essa restrição adicional só funciona para gestores. Para os demais papéis, o acesso continua sendo determinado por specEscopo().
      */
     private Specification<Lead> specSomenteMeus(Usuario solicitante, String escopo) {
         return (root, query, cb) -> {
             if (!"meus".equalsIgnoreCase(escopo) || !"gestor".equals(papelDe(solicitante))) return cb.conjunction();
+            //Se o escopo não for meus OU se o usuário não for gestor, não aplique uma restrição adicional.
             return cb.equal(root.get("corretor").get("id"), solicitante.getId());
+            //restringe os resultados aos clientes cujo corretor responsável é o próprio gestor.
         };
     }
 
@@ -456,6 +473,7 @@ public class LeadsService {
                 .and(specOrigem(origem))
                 .and(specHistorico(historico));
         return leadRepository.findAll(spec, Sort.by(Sort.Direction.DESC, "dataAtualizacao"));
+        //busca a consulta, clientes recentemente atualizados aparece primeiro
     }
 
     public void inativarLead(Long id) {

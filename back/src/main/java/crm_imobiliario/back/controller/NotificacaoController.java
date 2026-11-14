@@ -34,7 +34,7 @@ public class NotificacaoController {
 
     @GetMapping("/nao-lidas")
     public ResponseEntity<Map<String,Long>> contar(Authentication auth) {
-        Usuario u = usuarioService.buscarPorEmail(auth.getName());
+        Usuario u = usuarioService.buscarPorEmail(auth.getName());//busca por email
         long count = notificacaoService.contarNaoLidas(u.getId());
         return ResponseEntity.ok(Map.of("count", count));
     }

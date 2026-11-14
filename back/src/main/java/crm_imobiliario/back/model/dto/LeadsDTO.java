@@ -2,7 +2,6 @@ package crm_imobiliario.back.model.dto;
 
 import crm_imobiliario.back.util.validacao.Documentos;
 import crm_imobiliario.back.util.validacao.Telefone;
-import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
@@ -22,8 +21,9 @@ public class LeadsDTO {
     @Pattern(regexp = "(?s).*\\p{L}.*", message = "O nome deve conter letras.")
     private String nome;
 
-    // opcional (vazio é aceito); se preenchido, precisa ser um e-mail válido
-    @Email(regexp = Documentos.EMAIL_REGEX, message = "O e-mail informado não é válido. Use o formato nome@dominio.com.")
+    // opcional (vazio é aceito); se preenchido, precisa ser um e-mail válido.
+    // Não usar @Email(regexp = ...) aqui: com regexp customizado ele também rejeita string vazia.
+    @Pattern(regexp = "^$|" + Documentos.EMAIL_REGEX, message = "O e-mail informado não é válido. Use o formato nome@dominio.com.")
     @Size(max = 255, message = "O e-mail deve ter no máximo 255 caracteres.")
     private String email;
 

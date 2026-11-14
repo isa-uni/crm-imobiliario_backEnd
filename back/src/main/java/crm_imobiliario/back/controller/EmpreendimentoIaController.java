@@ -46,10 +46,10 @@ public class EmpreendimentoIaController {
     }
 
     @PostMapping("/upload")
-    public ResponseEntity<?> upload(@RequestParam("files") List<MultipartFile> files,
+    public ResponseEntity<?> upload(@RequestParam("files") List<MultipartFile> files,//Recebe o arquivo
                                     @RequestParam(value = "empreendimentoId", required = false) Long empreendimentoId,
                                     Authentication auth) throws Exception {
-        exigirAdminGestor(auth);
+        exigirAdminGestor(auth);//Permissão somente para gestores e admins
         if (files == null || files.isEmpty()) throw new IllegalArgumentException("Selecione pelo menos um arquivo para enviar.");
         if (files.size() > 5) throw new IllegalArgumentException("Envie no máximo 5 arquivos por vez. Você selecionou " + files.size() + ".");
         Long uid = usuarioId(auth);
@@ -122,7 +122,7 @@ public class EmpreendimentoIaController {
         return ResponseEntity.ok(pg);
     }
 
-    @GetMapping("/{id}/detalhe")
+    @GetMapping("/{id}/detalhe")//buscar os detalhes de um empreendimento específico.
     public ResponseEntity<EmpreendimentoDetalheDTO> detalhe(@PathVariable Long id, Authentication auth) {
         return ResponseEntity.ok(empreendimentoIaService.detalhar(id));
     }

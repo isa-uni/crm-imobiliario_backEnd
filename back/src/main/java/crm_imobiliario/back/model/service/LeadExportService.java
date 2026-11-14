@@ -35,7 +35,7 @@ public class LeadExportService {
         List<LeadListaDTO> leads = leadsService.findAllForExport(search, status, month, origem, historico, escopo)
                 .stream().map(LeadListaDTO::from).toList();
 
-        try (XSSFWorkbook wb = new XSSFWorkbook()) {
+        try (XSSFWorkbook wb = new XSSFWorkbook()) {//montando as abas
             LeadExportExcelBuilder.buildLeadsSheet(wb, leads);
             LeadExportExcelBuilder.buildFunilSheet(wb, contagemFunilCumulativa(leads, FUNIL_ORDEM), FUNIL_ORDEM);
             LeadExportExcelBuilder.buildOrigemSheet(wb, contagemPorCampo(leads, LeadListaDTO::origem, "Sem origem"));
@@ -56,14 +56,17 @@ public class LeadExportService {
      * lead/oportunidade/visita-agendada/visita-realizada/pasta, mas não em aprovado/contrato.
      */
     static Map<String, Long> contagemFunilCumulativa(List<LeadListaDTO> leads, List<String> ordem) {
-        Map<String, Long> contagens = new LinkedHashMap<>();
-        for (int i = 0; i < ordem.size(); i++) {
+        //recebe uma lista de clientes e a ordem das etapas do funil
+        Map<String, Long> contagens = new LinkedHashMap<>();//mapa vazio
+        for (int i = 0; i < ordem.size(); i++) {//percorre as etapas do funil
             String etapa = ordem.get(i);
-            if (i == 0) {
+            if (i == 0) {//se primeira etapa, coloca a quantidade total de clientes.
                 contagens.put(etapa, (long) leads.size());
             } else {
-                Set<String> validos = new HashSet<>(ordem.subList(i, ordem.size()));
+                Set<String> validos = new HashSet<>(ordem.subList(i, ordem.size()));//pega a etapa atual e todas as etapas posteriores.Pq é cumulativo
                 contagens.put(etapa, leads.stream().filter(l -> validos.contains(l.status())).count());
+                //Percorra todos os clientes, pega o status de cada cliente, verifique se esse status está dentro do conjunto validos.
+                //conta quantos clientes passaram nessa verificação, guarda o resultado no mapa.
             }
         }
         return contagens;
@@ -71,15 +74,16 @@ public class LeadExportService {
 
     /** Agrupa e conta, ordenado do maior para o menor — mesma ordenação usada em LeadOrigemChart.tsx. */
     static Map<String, Long> contagemPorCampo(List<LeadListaDTO> leads, Function<LeadListaDTO, String> campo, String valorPadrao) {
-        Map<String, Long> contagens = leads.stream().collect(Collectors.groupingBy(
+        //recebe lista de clientes, info que vamos analisar e oq utilizar quando a info estiver vazia
+        Map<String, Long> contagens = leads.stream().collect(Collectors.groupingBy(//percorre o cliente e separa por grupo de acordo com o campo
                 l -> {
-                    String v = campo.apply(l);
-                    return (v == null || v.isBlank()) ? valorPadrao : v;
+                    String v = campo.apply(l);//pega o campo da analise
+                    return (v == null || v.isBlank()) ? valorPadrao : v;//trata info vazia
                 },
-                Collectors.counting()));
+                Collectors.counting()));//conta quantos existem em cada grupo
         return contagens.entrySet().stream()
-                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed())//compara valores e ordenada para maiores primeiro
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue,
-                        (a, b) -> a, LinkedHashMap::new));
+                        (a, b) -> a, LinkedHashMap::new));//mantem no formato em map
     }
 }

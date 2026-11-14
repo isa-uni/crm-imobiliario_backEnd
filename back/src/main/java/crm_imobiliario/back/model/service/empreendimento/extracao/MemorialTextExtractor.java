@@ -126,37 +126,24 @@ public class MemorialTextExtractor {
             "(?i)\\b(de|do|da|dos|das|com|e|em|por|para|na|no|nas|nos|a|o|ao)$");
 
     // "Zona Norte de Londrina" / "Região Central de Maringá" — na página de localização/mapa (que nos
-    // books reais vem logo após a lista de ÁREAS COMUNS), o empreendimento raramente tem o endereço
-    // completo (rua+número) fora do rodapé institucional da Pride, mas quase sempre descreve a região e a
-    // cidade em texto corrido (ex.: "A Zona Norte de Londrina concentra..."). Region label com
-    // case-insensitive isolado num grupo próprio para preservar a grafia original; nome da cidade exige
-    // maiúscula inicial em cada palavra para não continuar casando a frase seguinte (minúscula).
+    // books reais vem logo após a lista de ÁREAS COMUNS)
     private static final Pattern REGIAO_CIDADE = Pattern.compile(
             "((?i:(?:Zona|Regi[aã]o)\\s+(?:Norte|Sul|Leste|Oeste|Central|Metropolitana)))\\s+de\\s+"
                     + "([A-ZÀ-Ú][\\p{L}]+(?:\\s+(?:de|do|dos|da|das)\\s+[A-ZÀ-Ú][\\p{L}]+)*)");
 
     // "Seja bem-vindo ao Residencial Felicce," / "Seja bem-vindo ao Solare Essenza," — abertura padrão dos
     // books reais da Pride, sempre na página 2, apresentando o nome oficial do empreendimento logo após
-    // "ao" (com ou sem o prefixo "Residencial" — livros da linha Solare não usam "Residencial"). Confirmado
-    // como a convenção real de nomenclatura já usada no sistema (guia-de-bolso: "Residencial London Plaza",
-    // "Residencial Felicce", "Solare Essenza") — captura de 1 a 4 palavras em maiúscula inicial, parando na
-    // primeira pontuação/palavra minúscula.
+    // "ao"
     private static final Pattern NOME_BOAS_VINDAS = Pattern.compile(
             "(?i:Seja\\s+bem[- ]?vindo\\s+ao)\\s+([A-ZÀ-Ú][\\p{L}]*(?:\\s+[A-ZÀ-Ú][\\p{L}]*){0,3})");
 
     // Fallback para books sem a abertura "Seja bem-vindo ao X" (ex.: "...tem orgulho em apresentar... o
     // Residencial Marbella,"). Menos específico que o padrão acima — só usado quando ele não é encontrado.
-    // Captura "Residencial" junto com o nome (não só o que vem depois) para manter a mesma convenção de
-    // nomenclatura já usada no sistema (guia-de-bolso: "Residencial London Plaza", "Residencial Felicce").
     private static final Pattern NOME_RESIDENCIAL = Pattern.compile(
             "(Residencial\\s+[A-ZÀ-Ú][\\p{L}]*(?:\\s+[A-ZÀ-Ú][\\p{L}]*){0,3})");
 
     // Sinais de que um endereço encontrado pertence à Pride (institucional/comercial), não ao
     // empreendimento — rodapé de contato, site/redes institucionais, central de vendas/plantão etc.
-    // (§5 do spec de correção de endereço). NÃO inclui a palavra solta "Pride": todo book real descreve
-    // o empreendimento como "novo empreendimento da Pride/Construtora Pride" bem perto da região/cidade
-    // logo na introdução — usar "pride" como sinal rejeitava esse texto legítimo (confirmado nos books
-    // reais da Felicce e da Solare). Os sinais abaixo só aparecem no rodapé institucional de contato.
     private static final Pattern SINAL_INSTITUCIONAL_PRIDE = Pattern.compile(
             "(?i)meuapepride|construtorapride|central\\s+de\\s+vendas|plant[aã]o\\s+de\\s+vendas|fale\\s+conosco|atendimento\\s+ao\\s+cliente");
     private static final int JANELA_CONTEXTO_ENDERECO = 150;
@@ -164,10 +151,7 @@ public class MemorialTextExtractor {
     /**
      * @param elegivelParaEndereco false quando esta página não pode ser usada como fonte do endereço
      *                             do empreendimento — usado pelo orquestrador para excluir a última
-     *                             página de documentos do tipo Book, que nos books reais da Pride traz
-     *                             o endereço institucional/comercial, não o do empreendimento (§1/§3 do
-     *                             spec de correção de endereço). Não afeta os demais campos: diferenciais,
-     *                             características e lazer continuam sendo extraídos normalmente dessa página.
+     *                             página
      */
     public void extrair(String texto, EmpreendimentoDocumento doc, Integer pagina, boolean elegivelParaEndereco,
                          Map<String, Object> camposGerais, List<String> alertas) {
